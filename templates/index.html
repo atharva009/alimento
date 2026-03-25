@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-16">
+
+    <!-- Hero Section -->
+    <div class="text-center pt-8 md:pt-16 space-y-6">
+        <div
+            class="inline-flex items-center space-x-2 bg-purple-100/50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide uppercase shadow-sm border border-purple-200/50 dark:border-purple-800/50 backdrop-blur-sm">
+            <span class="relative flex h-2 w-2">
+                <span
+                    class="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
+            </span>
+            <span>Nutrition Intelligence Platform</span>
+        </div>
+
+        <h1 class="text-5xl md:text-7xl font-bold tracking-tight text-gray-900 dark:text-white leading-[1.1]">
+            Nutrition guidance <br />
+            <span
+                class="font-serif-accent italic bg-gradient-to-r from-purple-500 to-cyan-500 bg-clip-text text-transparent pr-2">that adapts to you</span>
+            every day
+        </h1>
+
+        <p class="text-lg md:text-xl text-gray-600 dark:text-gray-400 max-w-2xl mx-auto leading-relaxed">
+            Track progress and get practical coaching based on your profile, goals, and history.
+        </p>
+    </div>
+
+    <!-- Product Navigation Strip -->
+    <div class="glass-panel rounded-2xl p-2 sm:p-3">
+        <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
+            <a href="/dashboard" data-login-next="/dashboard" class="auth-required-link surface-solid rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-center">Dashboard</a>
+            <a href="/inventory" data-login-next="/inventory" class="auth-required-link surface-solid rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-center">Inventory</a>
+            <a href="/planner" data-login-next="/planner" class="auth-required-link surface-solid rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-center">Planner</a>
+            <a href="/recipes" data-login-next="/recipes" class="auth-required-link surface-solid rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-center">Recipes</a>
+            <a href="/progress" data-login-next="/progress" class="auth-required-link surface-solid rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-center">Progress</a>
+            <a href="/social" data-login-next="/social" class="auth-required-link surface-solid rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-center">Social</a>
+        </div>
+    </div>
+
+    <!-- Welcome Card -->
+    <div class="relative">
+        <!-- Abstract Glow Behind -->
+        <div
+            class="absolute -top-10 -left-10 w-72 h-72 bg-purple-300/30 dark:bg-purple-900/20 rounded-full blur-[80px] -z-10 animate-pulse">
+        </div>
+        <div
+            class="absolute -bottom-10 -right-10 w-72 h-72 bg-cyan-300/30 dark:bg-cyan-900/20 rounded-full blur-[80px] -z-10 animate-pulse delay-700">
+        </div>
+
+        <div class="glass-panel rounded-[2rem] p-10 md:p-16 shadow-2xl text-center">
+            <div class="max-w-2xl mx-auto space-y-6">
+                <div class="w-20 h-20 bg-gradient-to-tr from-purple-500 to-purple-600 rounded-full flex items-center justify-center mx-auto shadow-lg">
+                    <i class="ph ph-heart-straight text-4xl text-white"></i>
+                </div>
+
+                <h2 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">
+                    Welcome to <span class="font-serif-accent italic bg-gradient-to-r from-purple-600 to-purple-400 bg-clip-text text-transparent">Alimento</span>
+                </h2>
+
+                <p class="text-lg text-gray-600 dark:text-gray-400 leading-relaxed">
+                    Your personalized nutrition companion. Track your meals, plan your week, monitor progress, and get AI-powered coaching tailored to your goals.
+                </p>
+
+                {% if not (current_user and current_user.is_authenticated) %}
+                <div class="pt-4">
+                    <button type="button" class="open-login-modal btn-primary px-8 py-4 rounded-xl text-sm font-bold uppercase tracking-wide shadow-lg hover:shadow-purple-500/20 transition-all">
+                        Get Started with Google
+                    </button>
+                    <p class="text-xs text-gray-500 mt-3">Sign in to unlock all features</p>
+                </div>
+                {% else %}
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+                    <a href="/dashboard" class="glass-panel p-6 rounded-xl hover:shadow-lg transition-all group">
+                        <i class="ph ph-chart-line-up text-3xl text-purple-500 mb-2 block group-hover:scale-110 transition-transform"></i>
+                        <h3 class="font-semibold text-gray-900 dark:text-white mb-1">Dashboard</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">View your daily stats</p>
+                    </a>
+                    <a href="/planner" class="glass-panel p-6 rounded-xl hover:shadow-lg transition-all group">
+                        <i class="ph ph-calendar text-3xl text-purple-500 mb-2 block group-hover:scale-110 transition-transform"></i>
+                        <h3 class="font-semibold text-gray-900 dark:text-white mb-1">Planner</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Plan your meals</p>
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
