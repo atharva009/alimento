@@ -1,0 +1,344 @@
+/* Modern Lilac Aesthetic - Glassmorphism System with Purple/Lilac Gradients */
+
+:root {
+    /* Font Families */
+    --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-serif: 'Playfair Display', serif;
+
+    /* Modern Palette - Light Mode with Lilac Gradients */
+    --bg-gradient-light: radial-gradient(circle at 50% 0%, #F3E8FF 0%, #FDFCFF 50%, #F5F3FF 100%);
+    --glass-bg-light: rgba(255, 255, 255, 0.85);
+    --glass-border-light: rgba(147, 112, 219, 0.15);
+    --glass-shadow-light: 0 8px 32px 0 rgba(147, 112, 219, 0.1);
+
+    /* Modern Palette - Dark Mode with Lilac Gradients */
+    --bg-gradient-dark: radial-gradient(circle at 50% 0%, #2D1B4E 0%, #1A0B2E 100%);
+    --glass-bg-dark: rgba(45, 27, 78, 0.7);
+    --glass-border-dark: rgba(147, 112, 219, 0.2);
+    --glass-shadow-dark: 0 8px 32px 0 rgba(88, 28, 135, 0.3);
+
+    --primary-glow: 147, 112, 219;
+    /* Lilac */
+}
+
+/* Global Reset & Base */
+body {
+    font-family: var(--font-sans);
+    background: var(--bg-gradient-light);
+    background-attachment: fixed;
+    color: #1a202c;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.dark body {
+    background: var(--bg-gradient-dark);
+    background-attachment: fixed;
+    color: #f8fafc;
+}
+
+/* Typography Utils */
+.font-serif-accent {
+    font-family: var(--font-serif);
+}
+
+/* --- Glassmorphism Components --- */
+
+/* Glass Panel (Cards, Containers) */
+.glass-panel {
+    background: var(--glass-bg-light);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border-light);
+    box-shadow: var(--glass-shadow-light);
+}
+
+.dark .glass-panel {
+    background: var(--glass-bg-dark);
+    border: 1px solid var(--glass-border-dark);
+    box-shadow: var(--glass-shadow-dark);
+}
+
+/* Glass Pill (Floating Nav) */
+.glass-pill {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+}
+
+.dark .glass-pill {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+}
+
+/* Active Navigation - High visibility */
+.nav-link-active {
+    background-color: rgba(147, 112, 219, 0.1);
+    /* Lilac-50 */
+    color: #9370DB;
+    /* Lilac-600 */
+    font-weight: 600;
+}
+
+.dark .nav-link-active {
+    background-color: rgba(147, 112, 219, 0.15);
+    color: #C8A2C8;
+    /* Lilac-400 */
+}
+
+/* --- Form Elements --- */
+.input-glass {
+    background: rgba(255, 255, 255, 0.75);
+    /* Increased opacity */
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+}
+
+.dark .input-glass {
+    background: rgba(15, 23, 42, 0.6);
+    /* Increased opacity */
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Select specific styling to prevent bleed-through */
+select.input-glass {
+    background-image: none;
+    /* We use custom icons usually, but ensure native don't conflict */
+}
+
+/* Ensure focus states remain high contrast */
+.input-glass:focus {
+    background: rgba(255, 255, 255, 0.95);
+    border-color: #9370DB;
+    box-shadow: 0 0 0 3px rgba(147, 112, 219, 0.15);
+    outline: none;
+}
+
+.dark .input-glass:focus {
+    background: rgba(15, 23, 42, 0.8);
+}
+
+/* --- Buttons --- */
+.btn-primary {
+    background: #18181b;
+    /* Zinc 900 */
+    color: white;
+    transition: transform 0.1s ease, box-shadow 0.2s ease;
+}
+
+.btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+}
+
+.dark .btn-primary {
+    background: #f8fafc;
+    /* Slate 50 */
+    color: #0f172a;
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    color: #111827;
+    transition: transform 0.1s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.btn-secondary:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.dark .btn-secondary {
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #f1f5f9;
+}
+
+.dark .btn-secondary:hover {
+    background: rgba(15, 23, 42, 0.85);
+}
+
+.btn-mini {
+    padding: 0.325rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.btn-mini-primary {
+    background: #18181b;
+    color: #ffffff;
+}
+
+.btn-mini-primary:hover {
+    filter: brightness(1.05);
+}
+
+.dark .btn-mini-primary {
+    background: #f8fafc;
+    color: #0f172a;
+}
+
+.btn-mini-secondary {
+    background: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    color: #111827;
+}
+
+.dark .btn-mini-secondary {
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #f1f5f9;
+}
+
+.btn-mini-danger {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    color: #b91c1c;
+}
+
+.dark .btn-mini-danger {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    color: #fecaca;
+}
+
+.chip-toggle {
+    padding: 0.375rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    background: rgba(243, 244, 246, 0.9);
+    color: #334155;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.chip-toggle:hover {
+    background: rgba(229, 231, 235, 0.95);
+}
+
+.dark .chip-toggle {
+    background: rgba(255, 255, 255, 0.08);
+    color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.chip-toggle-active {
+    background: rgba(147, 112, 219, 0.16);
+    color: #7B4FB8;
+    border: 1px solid rgba(147, 112, 219, 0.28);
+}
+
+.dark .chip-toggle-active {
+    background: rgba(147, 112, 219, 0.24);
+    color: #C8A2C8;
+    border: 1px solid rgba(147, 112, 219, 0.35);
+}
+
+/* Shared tool-page controls */
+.surface-solid {
+    background: #ffffff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.dark .surface-solid {
+    background: #0b1220;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+}
+
+.control-strip {
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 1rem;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dark .control-strip {
+    background: rgba(11, 18, 32, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.selector-pill {
+    background: #ffffff;
+    border: 1.5px solid rgba(15, 23, 42, 0.12);
+    border-radius: 0.9rem;
+    color: #0f172a;
+}
+
+.selector-pill:focus,
+.selector-pill:focus-visible {
+    outline: none;
+    border-color: #9370DB;
+    box-shadow: 0 0 0 3px rgba(147, 112, 219, 0.16);
+}
+
+.dark .selector-pill {
+    background: #0f172a;
+    border: 1.5px solid rgba(255, 255, 255, 0.14);
+    color: #f8fafc;
+}
+
+.icon-btn {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.65rem;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    background: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.icon-btn:hover {
+    background: #f8fafc;
+    transform: translateY(-1px);
+}
+
+.dark .icon-btn {
+    background: #0f172a;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #e2e8f0;
+}
+
+.dark .icon-btn:hover {
+    background: #111c31;
+}
+
+.today-chip {
+    background: #E6D9F5;
+    color: #5B3A8C;
+    border: 1px solid rgba(147, 112, 219, 0.15);
+    border-radius: 0.65rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.today-chip:hover {
+    background: #D4BFE8;
+}
+
+.dark .today-chip {
+    background: rgba(147, 112, 219, 0.24);
+    color: #D4BFE8;
+    border: 1px solid rgba(200, 162, 200, 0.25);
+}
