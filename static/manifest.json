@@ -1,0 +1,83 @@
+{
+  "name": "Alimento - Diet Designer",
+  "short_name": "Alimento",
+  "description": "AI-powered nutrition analysis tool with simple robot assistant",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#8B5CF6",
+  "orientation": "portrait",
+  "scope": "/",
+  "lang": "en",
+  "categories": ["health", "fitness", "food", "productivity"],
+  "icons": [
+    {
+      "src": "/static/icon16.png",
+      "sizes": "16x16",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon64.png",
+      "sizes": "64x64",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon256.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Quick Analysis",
+      "short_name": "Analyze",
+      "description": "Start nutrition analysis with AI robot assistant",
+      "url": "/",
+      "icons": [{"src": "/static/icon32.png", "sizes": "32x32"}]
+    },
+    {
+      "name": "View History",
+      "short_name": "History",
+      "description": "View past nutrition analyses",
+      "url": "/?tab=history",
+      "icons": [{"src": "/static/icon32.png", "sizes": "32x32"}]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/static/screenshot-desktop.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Alimento Desktop Interface"
+    },
+    {
+      "src": "/static/screenshot-mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Alimento Mobile Interface"
+    }
+  ]
+} 
