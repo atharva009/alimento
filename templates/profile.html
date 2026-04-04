@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+
+{% block title %}Profile - Alimento{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto py-8 sm:py-10 px-4 sm:px-6 lg:px-8 space-y-7">
+
+    <!-- Hero Profile Card -->
+    <div class="glass-panel p-1 rounded-3xl relative overflow-hidden group">
+        <div
+            class="absolute inset-0 bg-gradient-to-r from-purple-50/50 to-purple-100/30 dark:from-purple-900/10 dark:to-purple-900/10 transition-opacity opacity-100 group-hover:opacity-80">
+        </div>
+
+        <div
+            class="relative z-10 bg-white/40 dark:bg-gray-900/40 rounded-[1.4rem] p-6 sm:p-8 md:p-10 flex flex-col md:flex-row items-center gap-6 sm:gap-8 text-center md:text-left">
+            <!-- Avatar -->
+            <div class="relative">
+                <div class="w-32 h-32 rounded-full p-1 bg-gradient-to-tr from-purple-400 to-purple-600 shadow-xl">
+                    {% if user.picture %}
+                    <img src="{{ user.picture }}" alt="Profile"
+                        class="w-full h-full rounded-full object-cover border-4 border-white dark:border-gray-900">
+                    {% else %}
+                    <div
+                        class="w-full h-full rounded-full bg-white dark:bg-gray-900 flex items-center justify-center text-4xl font-serif-accent font-bold text-transparent bg-clip-text bg-gradient-to-br from-purple-500 to-purple-700">
+                        {{ user.name[0] if user.name else 'U' }}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="absolute bottom-2 right-2 w-6 h-6 bg-purple-500 border-4 border-white dark:border-gray-900 rounded-full"
+                    title="Active"></div>
+            </div>
+
+            <!-- Info -->
+            <div class="flex-1">
+                <h1 class="text-3xl font-bold text-gray-900 dark:text-white font-serif-accent mb-2">{{ user.name or
+                    'User' }}</h1>
+                <p
+                    class="text-gray-600 dark:text-gray-400 font-medium mb-6 flex items-center justify-center md:justify-start gap-2">
+                    <i class="ph ph-envelope-simple"></i> {{ user.email }}
+                </p>
+
+                <div class="flex flex-wrap justify-center md:justify-start gap-3">
+                    <span
+                        class="px-4 py-1.5 rounded-full bg-white/60 dark:bg-white/5 border border-white/20 text-sm font-medium text-gray-700 dark:text-gray-300 shadow-sm backdrop-blur-sm">
+                        Member since {{ user.created_at_formatted or '2024' }}
+                    </span>
+                    <form method="post" action="{{ url_for('auth.logout') }}">
+                        <button type="submit"
+                            class="px-5 py-1.5 rounded-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-bold uppercase tracking-wider hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors">
+                            Sign Out
+                        </button>
+                    </form>
+                </div>
+
+                <div class="mt-4 flex flex-wrap justify-center md:justify-start gap-2">
+                    <a href="{{ url_for('profile.setup') }}" class="btn-primary px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-2">
+                        <i class="ph ph-faders"></i>
+                        <span>Edit Diet Profile</span>
+                    </a>
+                    <a href="{{ url_for('profile.view_profile') }}" class="btn-secondary px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-2">
+                        <i class="ph ph-file-text"></i>
+                        <span>View Profile Summary</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Last Login -->
+        <div class="glass-panel rounded-2xl p-6 flex items-center gap-5 hover:scale-[1.01] transition-transform">
+            <div
+                class="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                <i class="ph ph-clock-counter-clockwise text-3xl"></i>
+            </div>
+            <div>
+                <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Last Signed
+                    In
+                </p>
+                <p class="text-xl font-bold text-gray-900 dark:text-gray-100 font-sans local-time"
+                    data-utc="{{ user.last_login_iso }}">{{ user.last_login_at_formatted or 'Just now' }}</p>
+            </div>
+        </div>
+
+        <!-- Security Status -->
+        <div class="glass-panel rounded-2xl p-6 flex items-center gap-5 hover:scale-[1.01] transition-transform">
+            <div
+                class="w-14 h-14 rounded-2xl bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center text-purple-600 dark:text-purple-400">
+                <i class="ph ph-shield-check text-3xl"></i>
+            </div>
+            <div>
+                <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Account
+                    Status</p>
+                <p id="accountStatusValue" class="text-xl font-bold text-gray-900 dark:text-gray-100">Checking...</p>
+                <p id="accountStatusHint" class="text-xs text-gray-500 mt-0.5">Reviewing recent sign-ins.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Profile (Active Sessions) -->
+    <div class="glass-panel rounded-3xl p-8">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-bold text-gray-900 dark:text-white font-serif-accent">Active Sessions</h2>
+            <span
+                class="text-xs font-semibold px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 flex items-center gap-1">
+                <div class="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"></div> Secure
+            </span>
+        </div>
+
+        {% if login_history %}
+        <div id="sessionList" class="space-y-4">
+            {% for login in login_history %}
+            <div
+                class="flex flex-col md:flex-row gap-5 items-center p-4 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-gray-800 {% if loop.index0 >= 3 %}older-session hidden{% endif %}">
+                <!-- Device Icon -->
+                <div
+                    class="w-14 h-14 rounded-xl bg-white dark:bg-gray-800 shadow-sm flex items-center justify-center flex-shrink-0 text-gray-400 dark:text-gray-500">
+                    <i class="ph ph-laptop text-2xl"></i>
+                </div>
+
+                <div class="flex-1 text-center md:text-left">
+                    <h3 class="text-lg font-bold text-gray-900 dark:text-white">{{ login.user_agent_short or 'Unknown
+                        Device' }}</h3>
+                    <div
+                        class="flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1 mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        <span class="flex items-center gap-1.5">
+                            <i class="ph ph-clock"></i>
+                            <span class="local-time" data-utc="{{ login.when_iso }}">{{ login.when_formatted }}</span>
+                        </span>
+                        <span class="flex items-center gap-1.5">
+                            <i class="ph ph-globe"></i>
+                            <span>{{ login.ip or 'Unknown IP' }}</span>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Status Badge -->
+                {% if loop.first %}
+                <div
+                    class="px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                    <div class="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"></div> Current
+                </div>
+                {% else %}
+                <div
+                    class="px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs font-bold uppercase tracking-wider">
+                    Past Login
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% if login_history|length > 3 %}
+        <button id="toggleSessions" class="btn-secondary mt-4 px-4 py-2 rounded-xl text-sm font-semibold">
+            Show older sessions
+        </button>
+        {% endif %}
+        {% else %}
+        <div class="text-center py-8 opacity-60">
+            <p>Session details unavailable.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="border border-red-200 dark:border-red-900/50 rounded-3xl p-8 bg-red-50/30 dark:bg-red-900/10">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+                <h3 class="text-lg font-bold text-red-700 dark:text-red-400 mb-1">Delete Account</h3>
+                <p class="text-sm text-red-600/80 dark:text-red-400/70">
+                    Permanently delete your account and all of your content. This action is irreversible.
+                </p>
+            </div>
+            <button onclick="openDeleteModal()"
+                class="px-6 py-2.5 rounded-xl bg-red-600 text-white font-bold text-sm shadow-lg shadow-red-500/30 hover:bg-red-700 transition-all flex items-center justify-center gap-2 whitespace-nowrap">
+                <i class="ph ph-trash"></i> Delete Account
+            </button>
+        </div>
+    </div>
+
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="deleteModal"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all duration-300">
+    <div
+        class="bg-white dark:bg-gray-900 w-full max-w-md rounded-3xl shadow-2xl p-8 transform scale-100 transition-all relative overflow-hidden">
+        <!-- Background decorative blob -->
+        <div class="absolute -top-10 -right-10 w-32 h-32 bg-red-500/10 rounded-full blur-2xl"></div>
+
+        <div class="text-center">
+            <div
+                class="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-6 text-red-600 dark:text-red-500">
+                <i class="ph ph-warning-circle text-4xl"></i>
+            </div>
+
+            <h3 class="text-2xl font-bold text-gray-900 dark:text-white mb-2 font-serif-accent">Delete Account?</h3>
+            <p class="text-gray-500 dark:text-gray-400 mb-8">
+                Are you sure you want to delete your account? All of your data will be permanently removed. This action
+                cannot be undone.
+            </p>
+
+            <div class="mb-4 text-left">
+                <label for="deleteConfirmInput" class="block text-xs font-semibold text-gray-500 mb-1">Type <span class="font-bold">DELETE</span> to confirm</label>
+                <input id="deleteConfirmInput" type="text" class="input-glass w-full rounded-xl px-3 py-2 text-sm" placeholder="DELETE">
+                <p id="deleteError" class="text-xs text-red-600 dark:text-red-400 mt-2 hidden"></p>
+            </div>
+
+            <div class="flex flex-col gap-3">
+                <button onclick="deleteAccount()" id="confirmDeleteBtn"
+                    class="w-full py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold shadow-lg shadow-red-500/30 transition-all flex items-center justify-center gap-2 opacity-60 cursor-not-allowed" disabled>
+                    <span id="deleteBtnText">Yes, Delete Everything</span>
+                    <i class="ph ph-spinner animate-spin hidden" id="deleteSpinner"></i>
+                </button>
+                <button onclick="closeDeleteModal()"
+                    class="w-full py-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold transition-all">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Timezone conversion for sessions
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.local-time').forEach(el => {
+            const utc = el.getAttribute('data-utc');
+            if (utc) {
+                const date = new Date(utc);
+                el.textContent = date.toLocaleString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit'
+                });
+            }
+        });
+
+        const toggleBtn = document.getElementById('toggleSessions');
+        if (toggleBtn) {
+            let expanded = false;
+            toggleBtn.addEventListener('click', () => {
+                expanded = !expanded;
+                document.querySelectorAll('.older-session').forEach((el) => {
+                    el.classList.toggle('hidden', !expanded);
+                });
+                toggleBtn.textContent = expanded ? 'Hide older sessions' : 'Show older sessions';
+            });
+        }
+
+        const confirmInput = document.getElementById('deleteConfirmInput');
+        if (confirmInput) {
+            confirmInput.addEventListener('input', () => {
+                const canDelete = confirmInput.value.trim() === 'DELETE';
+                const btn = document.getElementById('confirmDeleteBtn');
+                btn.disabled = !canDelete;
+                btn.classList.toggle('opacity-60', !canDelete);
+                btn.classList.toggle('cursor-not-allowed', !canDelete);
+                hideDeleteError();
+            });
+        }
+
+        updateAccountStatus();
+    });
+
+    function updateAccountStatus() {
+        const statusValue = document.getElementById('accountStatusValue');
+        const statusHint = document.getElementById('accountStatusHint');
+        const latest = document.querySelector('.local-time[data-utc]');
+
+        if (!statusValue || !statusHint || !latest) return;
+
+        const raw = latest.getAttribute('data-utc');
+        if (!raw) return;
+        const dt = new Date(raw);
+        if (Number.isNaN(dt.getTime())) return;
+
+        const daysSince = Math.floor((Date.now() - dt.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysSince <= 7) {
+            statusValue.textContent = 'Secure & Active';
+            statusValue.className = 'text-xl font-bold text-purple-600 dark:text-purple-400';
+            statusHint.textContent = 'Recent sign-in activity looks healthy.';
+            return;
+        }
+
+        if (daysSince <= 30) {
+            statusValue.textContent = 'Active';
+            statusValue.className = 'text-xl font-bold text-amber-600 dark:text-amber-400';
+            statusHint.textContent = 'No recent risk signals. Last login was a while ago.';
+            return;
+        }
+
+        statusValue.textContent = 'Review Recommended';
+        statusValue.className = 'text-xl font-bold text-red-600 dark:text-red-400';
+        statusHint.textContent = 'Long inactivity detected. Review your account sessions.';
+    }
+
+    function openDeleteModal() {
+        const modal = document.getElementById('deleteModal');
+        modal.classList.remove('hidden');
+        const input = document.getElementById('deleteConfirmInput');
+        input.value = '';
+        const btn = document.getElementById('confirmDeleteBtn');
+        btn.disabled = true;
+        btn.classList.add('opacity-60', 'cursor-not-allowed');
+        hideDeleteError();
+        input.focus();
+    }
+
+    function closeDeleteModal() {
+        const modal = document.getElementById('deleteModal');
+        modal.classList.add('hidden');
+        hideDeleteError();
+    }
+
+    function showDeleteError(message) {
+        const el = document.getElementById('deleteError');
+        el.textContent = message;
+        el.classList.remove('hidden');
+    }
+
+    function hideDeleteError() {
+        const el = document.getElementById('deleteError');
+        el.textContent = '';
+        el.classList.add('hidden');
+    }
+
+    async function deleteAccount() {
+        const btn = document.getElementById('confirmDeleteBtn');
+        const txt = document.getElementById('deleteBtnText');
+        const spin = document.getElementById('deleteSpinner');
+        const confirmInput = document.getElementById('deleteConfirmInput');
+
+        if (confirmInput.value.trim() !== 'DELETE') {
+            showDeleteError('Type DELETE exactly to confirm account deletion.');
+            return;
+        }
+
+        // Disable button state
+        btn.disabled = true;
+        btn.classList.add('opacity-75', 'cursor-not-allowed');
+        txt.textContent = 'Deleting...';
+        spin.classList.remove('hidden');
+
+        try {
+            const response = await fetch('/delete-account', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                window.location.href = '/';
+            } else {
+                showDeleteError('Error deleting account: ' + (result.error || 'Unknown error'));
+                // Reset state on error
+                btn.disabled = false;
+                btn.classList.remove('opacity-75', 'cursor-not-allowed');
+                txt.textContent = 'Yes, Delete Everything';
+                spin.classList.add('hidden');
+            }
+        } catch (error) {
+            console.error('Delete error:', error);
+            showDeleteError('An error occurred. Please try again.');
+            // Reset state on error
+            btn.disabled = false;
+            btn.classList.remove('opacity-75', 'cursor-not-allowed');
+            txt.textContent = 'Yes, Delete Everything';
+            spin.classList.add('hidden');
+        }
+    }
+</script>
+{% endblock %}
