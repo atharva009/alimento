@@ -124,3 +124,66 @@ class TestCalculateTdee:
     def test_none_activity_defaults_to_sedentary(self):
         assert calculate_tdee(self.BMR, None) == pytest.approx(2400.0, rel=1e-4)
 
+
+# ---------------------------------------------------------------------------
+# TC-04  compute_macro_adherence_10pt — edge cases and scoring
+# ---------------------------------------------------------------------------
+class TestComputeMacroAdherence:
+    """
+    Test case TC-04: 10-point macro adherence scoring.
+
+    Scoring rules:
+      - Returns score=None when calories <= 0 or macros are missing.
+      - Perfect match to diet targets → score == 10.0.
+      - Each macro that deviates > 5% from target costs points; score is
+        clamped to [1.0, 10.0].
+
+    Oracle for perfect standard_american (50% carbs / 20% protein / 30% fat):
+      2000 kcal → carbs=250g, protein=100g, fat=66.67g → score 10.0
+
+    Oracle for deliberately wrong keto (5/25/70):
+      2000 kcal with 250g carbs (= 50% vs 5% target) → heavy penalty → score 1.0
+    """
+
+    def test_zero_calories_returns_none_score(self):
+        result = compute_macro_adherence_10pt(0, 50, 30, 20, "standard_american")
+        assert result["score"] is None
+
+    def test_negative_calories_returns_none_score(self):
+        result = compute_macro_adherence_10pt(-100, 50, 30, 20, "standard_american")
+        assert result["score"] is None
+
+    def test_none_macro_returns_none_score(self):
+        """Missing a macro value should surface a None score with explanation."""
+        result = compute_macro_adherence_10pt(2000, None, 100, 66.7, "standard_american")
+        assert result["score"] is None
+        assert "missing" in result["explanation"].lower() or "Missing" in result["explanation"]
+
+    def test_perfect_standard_american_scores_10(self):
+        """
+        standard_american: carbs=50%, protein=20%, fat=30%
+        2000 kcal → carbs=250g, protein=100g, fat=66.67g → all within ±5% → 10.0
+        """
+        result = compute_macro_adherence_10pt(2000, 250, 100, 66.67, "standard_american")
+        assert result["score"] == pytest.approx(10.0, abs=0.1)
+
+    def test_severely_wrong_macros_score_clamps_to_1(self):
+        """
+        Keto target: carbs=5%, protein=25%, fat=70%
+        Actual: carbs=250g(50%), protein=100g(20%), fat=66.7g(30%)
+        carbs diff = 45% → penalty (0.45-0.05)*20 = 8
+        fat   diff = 40% → penalty (0.40-0.05)*20 = 7
+        total penalty = 15 → score = max(1, 10-15) = 1.0
+        """
+        result = compute_macro_adherence_10pt(2000, 250, 100, 66.7, "ketogenic")
+        assert result["score"] == pytest.approx(1.0, abs=0.1)
+
+    def test_score_is_between_1_and_10(self):
+        """Score must always be within [1.0, 10.0] regardless of inputs."""
+        result = compute_macro_adherence_10pt(500, 200, 5, 2, "ketogenic")
+        assert 1.0 <= result["score"] <= 10.0
+
+    def test_explanation_present_for_valid_score(self):
+        result = compute_macro_adherence_10pt(2000, 250, 100, 66.67, "standard_american")
+        assert "explanation" in result
+        assert isinstance(result["explanation"], str)
