@@ -297,3 +297,17 @@ class TestPortionFeedback:
         # 900 / 2000 = 45% → Hearty
         feedback = portion_feedback(900, self.DAILY_TARGET, "dinner")
         assert feedback.startswith("Hearty meal")
+
+    def test_very_heavy_above_60_percent(self):
+        # 1400 / 2000 = 70% → Very heavy
+        feedback = portion_feedback(1400, self.DAILY_TARGET, "dinner")
+        assert feedback.startswith("Very heavy")
+
+    def test_workout_context_note_appended(self):
+        """pre_workout and post_workout contexts add ' for your workout' to feedback."""
+        feedback = portion_feedback(300, self.DAILY_TARGET, "pre_workout")
+        assert "workout" in feedback
+
+    def test_non_workout_context_no_extra_note(self):
+        feedback = portion_feedback(300, self.DAILY_TARGET, "lunch")
+        assert "workout" not in feedback
