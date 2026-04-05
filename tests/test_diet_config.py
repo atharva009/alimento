@@ -84,3 +84,43 @@ class TestCalculateBmrFemale:
         female = calculate_bmr(60, 165, 30, "female")
         assert other == pytest.approx(female, rel=1e-4)
 
+
+# ---------------------------------------------------------------------------
+# TC-03  calculate_tdee — activity multipliers
+# ---------------------------------------------------------------------------
+class TestCalculateTdee:
+    """
+    Test case TC-03: TDEE = BMR × activity multiplier.
+
+    Inputs:  bmr=2000, various activity levels
+    Expected multipliers: sedentary=1.2, moderately_active=1.55,
+    very_active=1.725, unknown→defaults to 1.2
+    Oracle: TDEE equals bmr × expected_multiplier
+    Success: all assertions pass
+    Failure: wrong multiplier applied or exception raised
+    """
+
+    BMR = 2000.0
+
+    def test_sedentary(self):
+        assert calculate_tdee(self.BMR, "sedentary") == pytest.approx(2400.0, rel=1e-4)
+
+    def test_lightly_active(self):
+        assert calculate_tdee(self.BMR, "lightly_active") == pytest.approx(2750.0, rel=1e-4)
+
+    def test_moderately_active(self):
+        assert calculate_tdee(self.BMR, "moderately_active") == pytest.approx(3100.0, rel=1e-4)
+
+    def test_very_active(self):
+        assert calculate_tdee(self.BMR, "very_active") == pytest.approx(3450.0, rel=1e-4)
+
+    def test_extremely_active(self):
+        assert calculate_tdee(self.BMR, "extremely_active") == pytest.approx(3800.0, rel=1e-4)
+
+    def test_unknown_activity_defaults_to_sedentary(self):
+        """An unrecognised level must fall back to the sedentary multiplier (1.2)."""
+        assert calculate_tdee(self.BMR, "couch_surfing") == pytest.approx(2400.0, rel=1e-4)
+
+    def test_none_activity_defaults_to_sedentary(self):
+        assert calculate_tdee(self.BMR, None) == pytest.approx(2400.0, rel=1e-4)
+
