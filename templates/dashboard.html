@@ -124,6 +124,19 @@
       </div>
     </div>
 
+    <!-- Macro adherence (3rd; matches per-meal badges) -->
+    <div class="metric-card glass-panel rounded-2xl p-4 sm:p-6 flex flex-col justify-between min-h-[11rem] sm:min-h-0">
+      <div>
+        <h3 class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Macro adherence</h3>
+        <p id="adherenceDietLabel" class="text-[10px] text-gray-400 dark:text-gray-500 truncate" title=""></p>
+      </div>
+      <div class="flex items-baseline gap-1.5 my-2 sm:my-3">
+        <span id="adherenceAvgScore" class="text-3xl sm:text-4xl font-bold font-serif-accent leading-none text-gray-400 dark:text-gray-500">—</span>
+        <span class="text-base sm:text-lg text-gray-400 dark:text-gray-500 font-medium">/10</span>
+      </div>
+      <p id="adherenceAvgMeta" class="text-[11px] leading-snug text-gray-500 dark:text-gray-400">Day average vs your diet macro mix.</p>
+    </div>
+
     <!-- Hydration (Glass Card) -->
     <div class="metric-card glass-panel rounded-2xl p-4 sm:p-6 flex flex-col">
       <div class="flex items-center justify-between mb-4">
@@ -196,7 +209,18 @@
     </div>
     <div class="space-y-4">
       <div>
-        <label class="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Meal Description</label>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+          <label class="block text-xs font-semibold uppercase tracking-wider text-gray-500">Meal Description</label>
+          <button type="button" id="logMealFromPlanToggle"
+            class="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 inline-flex items-center gap-1 rounded-lg px-2 py-1 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors">
+            <i class="ph ph-calendar-check"></i>
+            <span>From saved week plan</span>
+          </button>
+        </div>
+        <div id="logMealPlanPicker" class="hidden mb-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/40 p-3 space-y-2">
+          <p id="logMealPlanPickerStatus" class="text-xs text-gray-500 dark:text-gray-400"></p>
+          <div id="logMealPlanPickerSlots" class="flex flex-col gap-1.5"></div>
+        </div>
         <textarea id="logMealText" rows="3" placeholder="e.g. Grilled chicken breast with rice and broccoli, about 400g total"
           class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/60 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none placeholder-gray-400"></textarea>
       </div>
@@ -344,6 +368,21 @@
       bar.style.width = `${w}%`;
     }
 
+    function prettyDietSlug(slug) {
+      if (!slug) return '';
+      return String(slug)
+        .split('_')
+        .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : ''))
+        .join(' ');
+    }
+
+    function adherenceScoreColorClass(score) {
+      if (score == null || Number.isNaN(score)) return 'text-gray-400 dark:text-gray-500';
+      if (score >= 8) return 'text-purple-600 dark:text-purple-400';
+      if (score >= 5) return 'text-amber-600 dark:text-amber-400';
+      return 'text-red-600 dark:text-red-400';
+    }
+
     function renderMeals(data) {
       const mealsEl = document.getElementById('mealsList');
       const mealsHeading = document.getElementById('mealsHeading');
@@ -457,6 +496,38 @@
       }
       document.getElementById('hydrationMl').innerText = data.hydration.ml || 0;
 
+      const mealsForAdherence = data.meals || [];
+      const scoredCount = mealsForAdherence.filter((m) => {
+        const s = m.personalization && m.personalization.macro_adherence && m.personalization.macro_adherence.score;
+        return s != null && s !== '';
+      }).length;
+      const dietLabel = document.getElementById('adherenceDietLabel');
+      const pd = prettyDietSlug(data.diet_type);
+      dietLabel.textContent = pd ? `Targets: ${pd}` : '';
+      dietLabel.title = pd ? `Macro adherence uses ${pd} ratio targets.` : '';
+
+      const scoreEl = document.getElementById('adherenceAvgScore');
+      const metaEl = document.getElementById('adherenceAvgMeta');
+      const avg = data.adherence_avg;
+      if (avg == null) {
+        scoreEl.textContent = '—';
+        scoreEl.className = 'text-3xl sm:text-4xl font-bold font-serif-accent leading-none text-gray-400 dark:text-gray-500';
+        if (!mealsForAdherence.length) {
+          metaEl.textContent = 'Log meals with macros to see a day average.';
+        } else if (!scoredCount) {
+          metaEl.textContent = 'No adherence scores yet — meals need a full macro breakdown.';
+        } else {
+          metaEl.textContent = 'Adherence could not be averaged for this day.';
+        }
+      } else {
+        scoreEl.textContent = String(avg);
+        scoreEl.className = `text-3xl sm:text-4xl font-bold font-serif-accent leading-none ${adherenceScoreColorClass(Number(avg))}`;
+        metaEl.textContent =
+          scoredCount === mealsForAdherence.length
+            ? `Average of ${scoredCount} meal${scoredCount === 1 ? '' : 's'} (same metric as badges below).`
+            : `Average of ${scoredCount} meal${scoredCount === 1 ? '' : 's'} with scores (${mealsForAdherence.length} logged today).`;
+      }
+
       if (data.is_today) {
         logWaterBtn.dataset.locked = '0';
         logWaterBtn.setAttribute('aria-disabled', 'false');
@@ -534,20 +605,14 @@
 
     if (logWaterBtn) {
       logWaterBtn.addEventListener('click', async () => {
-        if (logWaterBtn.dataset.locked === '1') return;
-        logWaterBtn.disabled = true;
-        logWaterBtn.classList.add('opacity-75');
-        try {
+        await withCtaLoading(logWaterBtn, async () => {
           await fetch('/api/dashboard/hydration', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ add_glasses: 1, add_ml: 250, offset })
           });
           await loadDay();
-        } finally {
-          logWaterBtn.disabled = false;
-          logWaterBtn.classList.remove('opacity-75');
-        }
+        }, { label: 'Adding…' });
       });
     }
 
@@ -614,6 +679,26 @@
     loadDay();
   })();
 
+  function dashboardMondayKey(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(`${dateStr}T12:00:00`);
+    const dow = d.getDay();
+    d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function resetLogMealPlanPicker() {
+    const picker = document.getElementById('logMealPlanPicker');
+    const status = document.getElementById('logMealPlanPickerStatus');
+    const slotsEl = document.getElementById('logMealPlanPickerSlots');
+    if (picker) picker.classList.add('hidden');
+    if (status) status.textContent = '';
+    if (slotsEl) slotsEl.innerHTML = '';
+  }
+
   function openLogMealModal() {
     const modal = document.getElementById('logMealModal');
     document.getElementById('logMealText').value = '';
@@ -621,6 +706,7 @@
     document.getElementById('logMealError').classList.add('hidden');
     document.getElementById('logMealSubmit').disabled = false;
     document.getElementById('logMealSubmit').innerHTML = '<i class="ph ph-check-circle text-lg"></i><span>Log Meal</span>';
+    resetLogMealPlanPicker();
     modal.classList.remove('hidden');
     modal.classList.add('flex');
     document.getElementById('logMealText').focus();
@@ -628,12 +714,94 @@
 
   function closeLogMealModal() {
     const modal = document.getElementById('logMealModal');
+    resetLogMealPlanPicker();
     modal.classList.add('hidden');
     modal.classList.remove('flex');
   }
 
   document.getElementById('closeLogMealModal').addEventListener('click', closeLogMealModal);
   document.getElementById('logMealBackdrop').addEventListener('click', closeLogMealModal);
+
+  document.getElementById('logMealFromPlanToggle').addEventListener('click', async () => {
+    const picker = document.getElementById('logMealPlanPicker');
+    const status = document.getElementById('logMealPlanPickerStatus');
+    const slotsEl = document.getElementById('logMealPlanPickerSlots');
+    const dateStr = (document.getElementById('dashboardDate').value || '').slice(0, 10);
+
+    if (!picker.classList.contains('hidden')) {
+      if (status.textContent === 'Loading…') return;
+      picker.classList.add('hidden');
+      return;
+    }
+
+    picker.classList.remove('hidden');
+    slotsEl.innerHTML = '';
+
+    if (!dateStr) {
+      status.textContent = 'Pick a day on the dashboard first.';
+      return;
+    }
+
+    status.textContent = 'Loading…';
+    const weekStart = dashboardMondayKey(dateStr);
+
+    try {
+      const res = await fetch(`/api/v3/planner/week?week_start=${encodeURIComponent(weekStart)}`);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Could not load plan');
+
+      const plan = data.plan;
+      if (!plan || !Array.isArray(plan.days) || !plan.days.length) {
+        status.textContent = 'No saved plan for this week. Create one in Planner and tap Save week.';
+        return;
+      }
+
+      const day = plan.days.find((d) => String(d.date || '').slice(0, 10) === dateStr);
+      if (!day) {
+        status.textContent = 'This day is not in your saved plan.';
+        return;
+      }
+
+      const order = ['breakfast', 'lunch', 'dinner'];
+      const labels = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner' };
+
+      for (const slotKey of order) {
+        const slot = (day.slots || []).find((s) => s.slot === slotKey);
+        const name = slot && slot.recipe_name ? String(slot.recipe_name).trim() : '';
+        if (!name) continue;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className =
+          'w-full text-left px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white/80 dark:bg-gray-900/40 text-sm hover:border-purple-400 dark:hover:border-purple-500 transition-colors';
+        const title = document.createElement('span');
+        title.className = 'font-semibold text-gray-700 dark:text-gray-200';
+        title.textContent = labels[slotKey];
+        const sub = document.createElement('span');
+        sub.className = 'text-gray-600 dark:text-gray-400';
+        sub.textContent = ' — ' + name;
+        btn.appendChild(title);
+        btn.appendChild(sub);
+        btn.addEventListener('click', () => {
+          document.getElementById('logMealType').value = slotKey;
+          const ing = Array.isArray(slot.ingredients) ? slot.ingredients.filter(Boolean) : [];
+          const parts = [name];
+          if (ing.length) parts.push(`Ingredients: ${ing.join(', ')}`);
+          document.getElementById('logMealText').value = parts.join('\n');
+          document.getElementById('logMealText').focus();
+        });
+        slotsEl.appendChild(btn);
+      }
+
+      if (!slotsEl.children.length) {
+        status.textContent = 'No breakfast, lunch, or dinner planned for this day yet.';
+        return;
+      }
+      status.textContent = 'Tap a meal to fill the form:';
+    } catch (e) {
+      status.textContent = e.message || 'Could not load plan.';
+    }
+  });
 
   document.getElementById('logMealSubmit').addEventListener('click', async () => {
     const text = document.getElementById('logMealText').value.trim();
@@ -648,24 +816,22 @@
     }
 
     errEl.classList.add('hidden');
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="ph ph-spinner-gap animate-spin text-lg"></i><span>Logging...</span>';
 
     try {
-      const res = await fetch('/api/v3/meals/log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: 'text', text_input: text, meal_type: mealType })
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'Failed to log meal');
-      closeLogMealModal();
-      location.reload();
+      await withCtaLoading(submitBtn, async () => {
+        const res = await fetch('/api/v3/meals/log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: 'text', text_input: text, meal_type: mealType })
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to log meal');
+        closeLogMealModal();
+        location.reload();
+      }, { label: 'Logging…' });
     } catch (err) {
       errEl.textContent = err.message || 'Something went wrong. Please try again.';
       errEl.classList.remove('hidden');
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = '<i class="ph ph-check-circle text-lg"></i><span>Log Meal</span>';
     }
   });
 </script>

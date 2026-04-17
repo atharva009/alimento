@@ -128,7 +128,7 @@
 
     async function suggestMeals() {
         const container = document.getElementById('suggestions');
-        container.innerHTML = '<p class="text-sm text-gray-500">Generating...</p>';
+        container.innerHTML = '';
         const res = await fetch('/api/v3/inventory/suggestions', { method: 'POST' });
         const data = await res.json();
         if (!data.success) {
@@ -146,9 +146,12 @@
         `).join('') || '<p class="text-sm text-gray-500">No suggestions returned.</p>';
     }
 
-    document.getElementById('addItemBtn').addEventListener('click', addItem);
-    document.getElementById('refreshInventoryBtn').addEventListener('click', loadInventory);
-    document.getElementById('suggestBtn').addEventListener('click', suggestMeals);
+    const addItemBtn = document.getElementById('addItemBtn');
+    const refreshInventoryBtn = document.getElementById('refreshInventoryBtn');
+    const suggestBtn = document.getElementById('suggestBtn');
+    addItemBtn.addEventListener('click', () => withCtaLoading(addItemBtn, addItem, { label: 'Adding…' }));
+    refreshInventoryBtn.addEventListener('click', () => withCtaLoading(refreshInventoryBtn, loadInventory, { label: 'Refreshing…' }));
+    suggestBtn.addEventListener('click', () => withCtaLoading(suggestBtn, suggestMeals, { label: 'Generating…' }));
     loadInventory();
 </script>
 {% endblock %}

@@ -251,9 +251,11 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         setupWeightDatePicker();
-        document.getElementById('reloadProgress').addEventListener('click', loadSummary);
+        const reloadProgressBtn = document.getElementById('reloadProgress');
+        const saveWeightBtn = document.getElementById('saveWeight');
+        reloadProgressBtn.addEventListener('click', () => withCtaLoading(reloadProgressBtn, loadSummary, { label: 'Refreshing…' }));
         document.getElementById('windowDays').addEventListener('change', loadSummary);
-        document.getElementById('saveWeight').addEventListener('click', saveWeight);
+        saveWeightBtn.addEventListener('click', () => withCtaLoading(saveWeightBtn, saveWeight, { label: 'Saving…' }));
         loadSummary();
         loadWeights();
     });

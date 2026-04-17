@@ -611,6 +611,21 @@ def _normalize_slots_map(slots):
     return mapped
 
 
+def _planner_ingredients_from_pool(recipe_name, recipes, recipe_pool):
+    """Match AI meal name to saved recipes so we can recover when the model omits ingredients."""
+    nk = _name_key(recipe_name)
+    if not nk:
+        return None
+    for coll in (recipes, recipe_pool):
+        for r in coll or []:
+            if _name_key(r.get("name")) != nk:
+                continue
+            out = [str(x).strip() for x in (r.get("ingredients") or []) if str(x).strip()]
+            if out:
+                return out[:16]
+    return None
+
+
 def _plan_has_excessive_repetition(days, max_occurrences=2):
     counts = {}
     prev_by_slot = {}
@@ -720,6 +735,7 @@ Rules:
 - If budget_per_meal is set (>0), each chosen meal should stay within that budget.
 - If budget_per_meal is set and recipe_pool has costs, choose meals strictly from recipe_pool so costs are enforceable.
 - Use recipe description and steps context from recipe_pool to improve plan quality.
+- Every slot MUST include "ingredients" as a JSON array with at least 3 non-empty strings (required for grocery list).
 
 User profile and goals context (from form):
 {json.dumps(ai_context.get("basic_info") or {})}
@@ -770,9 +786,26 @@ Recipe pool:
             if not slot:
                 print(f"[PLANNER DEBUG] failed: missing slot '{slot_name}' for date {date_key}")
                 return None
-            if not slot.get("ingredients"):
-                print(f"[PLANNER DEBUG] failed: no ingredients for slot '{slot_name}' on {date_key}")
-                return None
+            ings = slot.get("ingredients") if isinstance(slot.get("ingredients"), list) else []
+            if not ings:
+                recovered = _planner_ingredients_from_pool(
+                    slot.get("recipe_name"), recipes, recipe_pool
+                )
+                if recovered:
+                    slot["ingredients"] = recovered
+                    print(
+                        f"[PLANNER DEBUG] repaired empty ingredients for '{slot_name}' on {date_key} from recipe pool"
+                    )
+                else:
+                    slot["ingredients"] = [
+                        "Protein of choice",
+                        "Vegetables or salad",
+                        "Starch or grain as needed",
+                        "Seasonings and oil to taste",
+                    ]
+                    print(
+                        f"[PLANNER DEBUG] repaired empty ingredients for '{slot_name}' on {date_key} with defaults"
+                    )
             if not slot.get("notes"):
                 slot["notes"] = "Personalized for your goals and preferences."
             slots.append(slot)
@@ -939,8 +972,17 @@ def _context_missing_fields(user_id):
     return missing
 
 
+def _as_utc_aware(dt):
+    """Mongo often stores naive UTC datetimes; compare everything as timezone-aware UTC."""
+    if not isinstance(dt, datetime):
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _inventory_status(item, now=None):
-    now = now or datetime.now(timezone.utc)
+    now = _as_utc_aware(now or datetime.now(timezone.utc))
     quantity = _safe_float(item.get("quantity"), 0)
     threshold = _safe_float(item.get("low_stock_threshold"), 1)
     expires_at = item.get("expires_at")
@@ -951,6 +993,7 @@ def _inventory_status(item, now=None):
             expires_at = None
     days_left = None
     if expires_at and isinstance(expires_at, datetime):
+        expires_at = _as_utc_aware(expires_at)
         delta = expires_at - now
         days_left = delta.days
         if days_left <= 3:
@@ -1694,15 +1737,21 @@ def v3_planner_week():
     if err:
         return err
 
-    week_start_raw = request.args.get("week_start")
-    if week_start_raw:
+    def _parse_week_start(raw):
+        if not raw:
+            return None
         try:
-            week_start = datetime.fromisoformat(str(week_start_raw).replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            return datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc)
         except Exception:
-            week_start = _week_start(datetime.now(timezone.utc))
-    else:
-        week_start = _week_start(datetime.now(timezone.utc))
+            return None
 
+    week_start_raw = request.args.get("week_start")
+    if request.method == "POST":
+        body_preview = request.get_json(silent=True) or {}
+        week_start_raw = week_start_raw or body_preview.get("week_start")
+
+    week_start = _parse_week_start(week_start_raw) or _week_start(datetime.now(timezone.utc))
     week_start = datetime(week_start.year, week_start.month, week_start.day, tzinfo=timezone.utc)
 
     if request.method == "GET":

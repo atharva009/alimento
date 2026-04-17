@@ -315,30 +315,26 @@
     async function saveReminders() {
         const saveBtn = document.getElementById('saveReminders');
         const payload = currentReminderPayload();
-        saveBtn.disabled = true;
-        saveBtn.classList.add('opacity-70', 'cursor-not-allowed');
+        await withCtaLoading(saveBtn, async () => {
+            try {
+                const res = await fetch('/api/v3/settings/reminders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    showReminderStatus(data.error || 'Save failed.', false);
+                    return;
+                }
 
-        try {
-            const res = await fetch('/api/v3/settings/reminders', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            const data = await res.json();
-            if (!data.success) {
-                showReminderStatus(data.error || 'Save failed.', false);
-                return;
+                remindersState = payload;
+                showReminderStatus('Reminder settings saved.', true);
+                renderKpis();
+            } catch (_) {
+                showReminderStatus('Network error while saving reminders.', false);
             }
-
-            remindersState = payload;
-            showReminderStatus('Reminder settings saved.', true);
-            renderKpis();
-        } catch (_) {
-            showReminderStatus('Network error while saving reminders.', false);
-        } finally {
-            saveBtn.disabled = false;
-            saveBtn.classList.remove('opacity-70', 'cursor-not-allowed');
-        }
+        }, { label: 'Saving…' });
     }
 
     async function loadIntegrations() {
@@ -351,10 +347,7 @@
     }
 
     async function toggleIntegration(provider, action, buttonEl) {
-        if (buttonEl) {
-            buttonEl.disabled = true;
-            buttonEl.classList.add('opacity-70', 'cursor-not-allowed');
-        }
+        if (buttonEl) setCtaLoading(buttonEl, true, { spinnerOnly: true });
         try {
             const res = await fetch('/api/v3/settings/integrations', {
                 method: 'POST',
@@ -365,10 +358,7 @@
             if (!data.success) return;
             await loadIntegrations();
         } finally {
-            if (buttonEl) {
-                buttonEl.disabled = false;
-                buttonEl.classList.remove('opacity-70', 'cursor-not-allowed');
-            }
+            if (buttonEl) setCtaLoading(buttonEl, false);
         }
     }
 
@@ -379,7 +369,8 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('saveReminders').addEventListener('click', saveReminders);
-        document.getElementById('refreshIntegrations').addEventListener('click', loadIntegrations);
+        const refreshIntegrationsBtn = document.getElementById('refreshIntegrations');
+        refreshIntegrationsBtn.addEventListener('click', () => withCtaLoading(refreshIntegrationsBtn, loadIntegrations, { label: 'Refreshing…' }));
         document.getElementById('detectTimezone').addEventListener('click', detectTimezone);
 
         document.getElementById('integrationList').addEventListener('click', async (event) => {

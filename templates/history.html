@@ -10,7 +10,7 @@
             <p class="text-gray-600 dark:text-gray-400 mt-1">Your personal nutrition timeline.</p>
         </div>
         <div class="flex items-center space-x-3">
-            <button onclick="loadHistory()"
+            <button type="button" id="historyRefreshBtn"
                 class="glass-panel px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-white/80 dark:hover:bg-gray-800/80 transition-colors flex items-center space-x-2">
                 <i class="ph ph-arrow-clockwise"></i>
                 <span>Refresh</span>
@@ -155,10 +155,9 @@
             </p>
 
             <div class="flex flex-col gap-3">
-                <button id="confirmDeleteBtn" onclick="executeDelete()"
+                <button type="button" id="confirmDeleteBtn" onclick="executeDelete()"
                     class="w-full py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold shadow-lg shadow-red-500/30 transition-all flex items-center justify-center gap-2">
                     <span id="deleteBtnText">Yes, Delete</span>
-                    <i class="ph ph-spinner animate-spin hidden" id="deleteSpinner"></i>
                 </button>
                 <button onclick="closeDeleteModal()"
                     class="w-full py-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold transition-all">
@@ -174,7 +173,13 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-    document.addEventListener('DOMContentLoaded', loadHistory);
+    document.addEventListener('DOMContentLoaded', () => {
+        loadHistory();
+        const historyRefreshBtn = document.getElementById('historyRefreshBtn');
+        if (historyRefreshBtn) {
+            historyRefreshBtn.addEventListener('click', () => withCtaLoading(historyRefreshBtn, loadHistory, { label: 'Refreshing…' }));
+        }
+    });
 
     async function loadHistory() {
         const list = document.getElementById('historyContainer');
@@ -404,54 +409,42 @@
         pendingDeleteType = null;
         pendingDeleteId = null;
 
-        // Reset button state
         const btn = document.getElementById('confirmDeleteBtn');
-        const txt = document.getElementById('deleteBtnText');
-        const spin = document.getElementById('deleteSpinner');
-        btn.disabled = false;
-        btn.classList.remove('opacity-75', 'cursor-not-allowed');
-        spin.classList.add('hidden');
+        if (btn && typeof setCtaLoading === 'function') setCtaLoading(btn, false);
     }
 
     window.executeDelete = async function () {
         const btn = document.getElementById('confirmDeleteBtn');
-        const txt = document.getElementById('deleteBtnText');
-        const spin = document.getElementById('deleteSpinner');
 
-        btn.disabled = true;
-        btn.classList.add('opacity-75', 'cursor-not-allowed');
-        txt.textContent = 'Deleting...';
-        spin.classList.remove('hidden');
-
-        try {
-            if (pendingDeleteType === 'single' && pendingDeleteId) {
-                // Delete Single
-                const res = await fetch(`/delete-analysis/${pendingDeleteId}`, { method: 'POST' });
-                const data = await res.json();
-                if (data.success) {
-                    closeDeleteModal();
-                    loadHistory();
-                } else {
-                    alert(data.error || "Failed to delete");
-                    closeDeleteModal();
+        await withCtaLoading(btn, async () => {
+            try {
+                if (pendingDeleteType === 'single' && pendingDeleteId) {
+                    const res = await fetch(`/delete-analysis/${pendingDeleteId}`, { method: 'POST' });
+                    const data = await res.json();
+                    if (data.success) {
+                        closeDeleteModal();
+                        loadHistory();
+                    } else {
+                        alert(data.error || "Failed to delete");
+                        closeDeleteModal();
+                    }
+                } else if (pendingDeleteType === 'all') {
+                    const res = await fetch('/api/history/clear', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.success) {
+                        closeDeleteModal();
+                        loadHistory();
+                    } else {
+                        alert(data.error || "Failed to clear history");
+                        closeDeleteModal();
+                    }
                 }
-            } else if (pendingDeleteType === 'all') {
-                // Delete All
-                const res = await fetch('/api/history/clear', { method: 'POST' });
-                const data = await res.json();
-                if (data.success) {
-                    closeDeleteModal();
-                    loadHistory();
-                } else {
-                    alert(data.error || "Failed to clear history");
-                    closeDeleteModal();
-                }
+            } catch (e) {
+                console.error(e);
+                alert("An error occurred.");
+                closeDeleteModal();
             }
-        } catch (e) {
-            console.error(e);
-            alert("An error occurred.");
-            closeDeleteModal();
-        }
+        }, { label: 'Deleting…' });
     }
 
     // Hook up the Clear All button in logic if needed, but in HTML calling clearHistory() 

@@ -230,7 +230,7 @@
         const sendBtn = document.getElementById('sendCoach');
         if (!input || !sendBtn) return;
 
-        if (sendBtn.dataset.sending === '1') {
+        if (sendBtn.dataset.ctaBusy === '1') {
             sendBtn.disabled = true;
             sendBtn.classList.add('opacity-70', 'cursor-not-allowed');
             return;
@@ -375,7 +375,7 @@
     async function sendMessage() {
         const input = document.getElementById('coachInput');
         const sendBtn = document.getElementById('sendCoach');
-        if (sendBtn.dataset.sending === '1') return;
+        if (sendBtn.dataset.ctaBusy === '1') return;
         const text = input.value.trim();
         if (!text) {
             updateSendButtonState();
@@ -384,30 +384,25 @@
         input.value = '';
         updateSendButtonState();
         appendMessage('user', text);
-        sendBtn.dataset.sending = '1';
-        sendBtn.disabled = true;
-        sendBtn.classList.add('opacity-70', 'cursor-not-allowed');
-        try {
-            const res = await fetch('/api/v3/coach/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text })
-            });
-            const data = await res.json();
-            if (data.success) {
-                appendMessage('assistant', data.reply || 'I am thinking...');
-            } else {
-                appendMessage('assistant', data.message || 'Sorry, I could not process that right now.');
+        await withCtaLoading(sendBtn, async () => {
+            try {
+                const res = await fetch('/api/v3/coach/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    appendMessage('assistant', data.reply || 'I am thinking...');
+                } else {
+                    appendMessage('assistant', data.message || 'Sorry, I could not process that right now.');
+                }
+            } catch (_) {
+                appendMessage('assistant', 'Sorry, I could not process that right now.');
             }
-        } catch (_) {
-            appendMessage('assistant', 'Sorry, I could not process that right now.');
-        } finally {
-            sendBtn.dataset.sending = '0';
-            sendBtn.disabled = false;
-            sendBtn.classList.remove('opacity-70', 'cursor-not-allowed');
-            updateSendButtonState();
-            document.getElementById('coachInput').focus();
-        }
+        }, { spinnerOnly: true });
+        updateSendButtonState();
+        document.getElementById('coachInput').focus();
     }
 
     document.addEventListener('DOMContentLoaded', () => {
