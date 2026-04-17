@@ -515,6 +515,16 @@ DIET_CONFIGURATIONS['low_carb'] = {
 
 
 def get_activity_multiplier(level: str) -> float:
+    """Return the Harris-Benedict activity multiplier for a given activity level.
+
+    Args:
+        level: One of 'sedentary', 'lightly_active', 'moderately_active',
+               'very_active', or 'extremely_active'.  Unknown or ``None``
+               values default to ``'sedentary'``.
+
+    Returns:
+        A float multiplier in the range [1.2, 1.9].
+    """
     return {
         'sedentary': 1.2,
         'lightly_active': 1.375,
@@ -525,6 +535,18 @@ def get_activity_multiplier(level: str) -> float:
 
 
 def mifflin_st_jeor_bmr(weight_kg: float, height_cm: float, age_years: int, biological_sex: str) -> float:
+    """Compute Basal Metabolic Rate using the Mifflin-St Jeor equation.
+
+    Args:
+        weight_kg:      Body weight in kilograms.
+        height_cm:      Standing height in centimetres.
+        age_years:      Age in whole years.
+        biological_sex: ``'male'`` adds +5 kcal; any other value (``'female'``,
+                        ``'other'``) subtracts −161 kcal.
+
+    Returns:
+        BMR in kilocalories per day (kcal/day).
+    """
     if biological_sex == 'male':
         return (10 * weight_kg) + (6.25 * height_cm) - (5 * age_years) + 5
     # female or other
@@ -533,17 +555,52 @@ def mifflin_st_jeor_bmr(weight_kg: float, height_cm: float, age_years: int, biol
 
 # Exact-named helpers requested
 def calculate_bmr(weight_kg: float, height_cm: float, age: int, biological_sex: str) -> float:
-    """Mifflin-St Jeor Equation"""
+    """Calculate Basal Metabolic Rate using the Mifflin-St Jeor equation.
+
+    Delegates to :func:`mifflin_st_jeor_bmr`.
+
+    Args:
+        weight_kg:      Body weight in kilograms.
+        height_cm:      Standing height in centimetres.
+        age:            Age in whole years.
+        biological_sex: ``'male'`` or ``'female'`` / ``'other'``.
+
+    Returns:
+        BMR in kcal/day as a float.
+    """
     return mifflin_st_jeor_bmr(weight_kg, height_cm, age, biological_sex)
 
 
 def calculate_tdee(bmr: float, activity_level: str) -> float:
-    """Total Daily Energy Expenditure"""
+    """Calculate Total Daily Energy Expenditure (TDEE).
+
+    TDEE = BMR × activity multiplier.  The multiplier is looked up via
+    :func:`get_activity_multiplier`; unknown levels default to sedentary (1.2).
+
+    Args:
+        bmr:            Basal Metabolic Rate in kcal/day.
+        activity_level: Activity level string (e.g. ``'moderately_active'``).
+
+    Returns:
+        TDEE in kcal/day as a float.
+    """
     return bmr * get_activity_multiplier(activity_level)
 
 
 def calculate_macro_grams(calories: float, diet_type: str) -> Dict[str, float]:
-    """Convert macro percentages to grams using DIET_CONFIGURATIONS."""
+    """Convert a daily calorie target into macro gram targets for a given diet.
+
+    Uses the ``macro_ratios`` from :data:`DIET_CONFIGURATIONS`.  Unknown diet
+    slugs fall back to ``'standard_american'``.  Caloric densities used:
+    carbohydrate = 4 kcal/g, protein = 4 kcal/g, fat = 9 kcal/g.
+
+    Args:
+        calories:   Total daily calorie target in kcal.
+        diet_type:  Diet slug key (e.g. ``'ketogenic'``, ``'mediterranean'``).
+
+    Returns:
+        Dict with keys ``'carbs'``, ``'protein'``, and ``'fat'`` in grams.
+    """
     cfg = DIET_CONFIGURATIONS.get(diet_type) or DIET_CONFIGURATIONS['standard_american']
     ratios = cfg['macro_ratios']
     carb_cal = calories * (ratios['carbs'] / 100)
@@ -557,6 +614,18 @@ def calculate_macro_grams(calories: float, diet_type: str) -> Dict[str, float]:
 
 
 def goal_adjustment_calories(goal_type: str) -> int:
+    """Return the daily calorie adjustment (delta) associated with a goal.
+
+    Negative values indicate a caloric deficit (weight loss); positive values
+    indicate a surplus (weight / muscle gain).
+
+    Args:
+        goal_type: Goal slug such as ``'lose_weight_moderate'`` or
+                   ``'build_muscle'``.  Unknown values default to ``0``.
+
+    Returns:
+        Integer kcal delta to apply on top of maintenance TDEE.
+    """
     return {
         'lose_weight_slow': -250,
         'lose_weight_moderate': -500,
@@ -576,10 +645,41 @@ def midpoint(a: float, b: float) -> float:
 
 
 def get_diet_config(diet_slug: str) -> Dict[str, Any]:
+    """Retrieve legacy diet configuration from :data:`DIETS`.
+
+    Args:
+        diet_slug: Diet identifier string (e.g. ``'ketogenic'``).
+
+    Returns:
+        Diet config dict.  Falls back to ``'standard_american'`` for unknown slugs.
+    """
     return DIETS.get(diet_slug, DIETS['standard_american'])
 
 
 def calculate_daily_targets(age: int, sex: str, weight_kg: float, height_cm: float, activity_level: str, goal_type: str, diet_slug: str, override_calories: int = None) -> Dict[str, int]:
+    """Compute personalised daily macro and micronutrient targets.
+
+    Calculates TDEE from BMR and activity level, applies a goal-based calorie
+    delta, then derives macro gram targets from the diet's macro ratios.  A
+    minimum of 1 200 kcal/day is enforced.  Keto carb caps and DASH sodium
+    limits are applied automatically.
+
+    Args:
+        age:               User age in years.
+        sex:               Biological sex (``'male'`` / ``'female'`` / ``'other'``).
+        weight_kg:         Body weight in kilograms.
+        height_cm:         Standing height in centimetres.
+        activity_level:    Activity level slug (see :func:`get_activity_multiplier`).
+        goal_type:         Goal slug (see :func:`goal_adjustment_calories`).
+        diet_slug:         Diet identifier (see :func:`get_diet_config`).
+        override_calories: Optional explicit calorie target that bypasses the
+                           goal-adjustment calculation (floored at 1 200 kcal).
+
+    Returns:
+        Dict with integer values for ``target_calories``, ``protein_grams``,
+        ``carbs_grams``, ``fat_grams``, ``fiber_grams``, ``sodium_mg``, and
+        ``sugar_grams``.
+    """
     bmr = mifflin_st_jeor_bmr(weight_kg, height_cm, age, sex)
     maintenance = int(bmr * get_activity_multiplier(activity_level))
     
@@ -631,8 +731,28 @@ def calculate_daily_targets(age: int, sex: str, weight_kg: float, height_cm: flo
 
 
 def score_meal_adherence(nutrients: Dict[str, Any], diet_slug: str) -> Dict[str, Any]:
-    """Return adherence percentage and violations based on available nutrients.
-    nutrients may include: calories, carbs (g), protein (g), fat (g), sodium_mg, sodium_level.
+    """Score a single meal's macro composition against a target diet (0-100).
+
+    Diet-specific rules applied:
+
+    * **ketogenic** – heavy penalty (up to 60 pts) if carbs exceed the cap.
+    * **dash_diet**  – penalty (up to 40 pts) for estimated sodium > limit.
+    * **general**    – moderate penalty for any macro > 10 percentage points
+      off the diet midpoint.
+
+    Args:
+        nutrients: Dict that may contain any of: ``calories`` (kcal),
+                   ``carbs`` (g), ``protein`` (g), ``fat`` (g),
+                   ``sodium_mg`` (mg), ``sodium_level`` (``'low'`` /
+                   ``'medium'`` / ``'high'``).
+        diet_slug: Diet identifier string (see :func:`get_diet_config`).
+
+    Returns:
+        Dict with keys:
+
+        * ``score``      – integer 0-100 (higher is better).
+        * ``violations`` – list of violation dicts (``type``, ``message``).
+        * ``suggestions``– list of actionable suggestion strings.
     """
     violations = []
     score = 100
@@ -698,7 +818,27 @@ def score_meal_adherence(nutrients: Dict[str, Any], diet_slug: str) -> Dict[str,
 
 # Personalized analysis helpers
 def compute_macro_adherence_10pt(calories_kcal: float, carbs_g: float, protein_g: float, fat_g: float, diet_type: str) -> Dict[str, Any]:
-    """Score 1-10 based on ±5% tolerance to macro ratios."""
+    """Score macro adherence on a 1-10 scale with ±5% tolerance.
+
+    Each macro (carbs, protein, fat) that deviates more than 5 percentage
+    points from the diet target loses points at a rate of 1 pt per extra 5 pp.
+    The final score is clamped to [1.0, 10.0].
+
+    Args:
+        calories_kcal: Total meal calories.  Must be > 0; returns ``score=None``
+                       if zero or negative.
+        carbs_g:       Carbohydrate content in grams (or ``None``).
+        protein_g:     Protein content in grams (or ``None``).
+        fat_g:         Fat content in grams (or ``None``).
+        diet_type:     Diet slug used to look up target ratios in
+                       :data:`DIET_CONFIGURATIONS`.
+
+    Returns:
+        Dict with:
+
+        * ``score``       – float 1.0-10.0, or ``None`` if data is insufficient.
+        * ``explanation`` – human-readable string describing deviations.
+    """
     if not calories_kcal or calories_kcal <= 0:
         return {"score": None, "explanation": "Insufficient calorie data"}
     cfg = DIET_CONFIGURATIONS.get(diet_type) or DIET_CONFIGURATIONS['standard_american']
@@ -721,6 +861,25 @@ def compute_macro_adherence_10pt(calories_kcal: float, carbs_g: float, protein_g
 
 
 def detect_allergens_from_text(markdown_text: str, user_allergies: List[str]) -> List[Dict[str, Any]]:
+    """Scan free-form meal text for allergen keywords.
+
+    Performs case-insensitive substring matching.  At most one match is
+    returned per allergen slug (the first keyword hit).
+
+    Supported allergen slugs: ``nuts``, ``dairy``, ``eggs``, ``shellfish``,
+    ``fish``, ``soy``, ``gluten``, ``sesame``.  Unknown slugs are silently
+    skipped.
+
+    Args:
+        markdown_text:   Free-form text (e.g. AI meal analysis output).
+                         Returns ``[]`` if empty or ``None``.
+        user_allergies:  List of allergen slug strings to check.
+                         Returns ``[]`` if empty.
+
+    Returns:
+        List of dicts, each with keys ``allergen``, ``keyword``, and
+        ``confidence`` (always ``'medium'``).
+    """
     if not markdown_text or not user_allergies:
         return []
     text = (markdown_text or '').lower()
@@ -745,6 +904,29 @@ def detect_allergens_from_text(markdown_text: str, user_allergies: List[str]) ->
 
 
 def portion_feedback(calories_kcal: float, daily_target_kcal: float, meal_context: str) -> str:
+    """Return a human-readable portion-size feedback string.
+
+    Computes the meal's share of the daily calorie target and maps it to
+    one of four bands:
+
+    * **< 20 %** – "Light meal …"
+    * **20–40 %** – "Balanced portion …"
+    * **40–60 %** – "Hearty meal …"
+    * **> 60 %** – "Very heavy …"
+
+    A workout context note (``" for your workout"``) is appended when
+    ``meal_context`` is ``'pre_workout'`` or ``'post_workout'``.
+
+    Args:
+        calories_kcal:      Calories in this meal (kcal).
+        daily_target_kcal:  User's daily calorie target (kcal).  Must be > 0;
+                            returns ``""`` if falsy or zero.
+        meal_context:       Meal context string (e.g. ``'breakfast'``,
+                            ``'pre_workout'``).
+
+    Returns:
+        Feedback string, or ``""`` when inputs are invalid.
+    """
     if not calories_kcal or not daily_target_kcal or daily_target_kcal <= 0:
         return ""
     pct = calories_kcal / daily_target_kcal
@@ -761,6 +943,15 @@ def portion_feedback(calories_kcal: float, daily_target_kcal: float, meal_contex
 
 
 def goal_specific_advice(goal_type: str) -> List[str]:
+    """Return a list of actionable nutrition tips for a specific goal.
+
+    Args:
+        goal_type: Goal slug (e.g. ``'build_muscle'``, ``'lose_weight_fast'``).
+                   Unknown values return a generic tip list.
+
+    Returns:
+        List of advice strings (2 items for known goals, 1 for unknown).
+    """
     mapping = {
         'lose_weight_slow': ["Reduce calorie-dense toppings", "Increase non-starchy vegetables"],
         'lose_weight_moderate': ["Choose leaner proteins", "Swap refined grains for whole grains"],

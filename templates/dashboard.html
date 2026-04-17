@@ -124,27 +124,6 @@
       </div>
     </div>
 
-    <!-- Diet Score (Glass Card) -->
-    <div class="metric-card glass-panel rounded-2xl p-4 sm:p-6 text-center flex flex-col items-center justify-center relative">
-      <div
-        class="absolute inset-0 bg-gradient-to-t from-purple-50/30 to-transparent dark:from-purple-900/10 pointer-events-none">
-      </div>
-      <h3 class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1 sm:mb-2 relative z-10">
-        Adherence Score</h3>
-
-      <div class="relative z-10">
-        <span
-          class="text-4xl sm:text-5xl font-bold font-serif-accent bg-gradient-to-r from-purple-500 to-purple-600 bg-clip-text text-transparent"
-          id="dietScore">—</span>
-        <span class="text-xl text-gray-400 font-light">/10</span>
-      </div>
-
-      <div id="dietBadge"
-        class="mt-2 text-xs font-medium px-2 py-1 rounded bg-purple-100/50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 relative z-10">
-        Flexible Dieting
-      </div>
-    </div>
-
     <!-- Hydration (Glass Card) -->
     <div class="metric-card glass-panel rounded-2xl p-4 sm:p-6 flex flex-col">
       <div class="flex items-center justify-between mb-4">
@@ -201,6 +180,42 @@
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- Log Meal Modal -->
+<div id="logMealModal" class="fixed inset-0 z-[200] hidden items-center justify-center">
+  <div id="logMealBackdrop" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative w-full max-w-md mx-4 glass-panel rounded-3xl p-6 sm:p-8 shadow-2xl">
+    <button id="closeLogMealModal" class="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
+      <i class="ph ph-x text-lg"></i>
+    </button>
+    <div class="mb-5">
+      <h2 class="text-xl font-bold font-serif-accent text-gray-900 dark:text-white">Log a Meal</h2>
+      <p class="text-sm text-gray-500 mt-1">Describe what you ate and we'll calculate the nutrition.</p>
+    </div>
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Meal Description</label>
+        <textarea id="logMealText" rows="3" placeholder="e.g. Grilled chicken breast with rice and broccoli, about 400g total"
+          class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/60 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none placeholder-gray-400"></textarea>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Meal Type</label>
+        <select id="logMealType" class="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/60 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500">
+          <option value="unspecified">Unspecified</option>
+          <option value="breakfast">Breakfast</option>
+          <option value="lunch">Lunch</option>
+          <option value="dinner">Dinner</option>
+          <option value="snack">Snack</option>
+        </select>
+      </div>
+      <div id="logMealError" class="hidden text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg"></div>
+      <button id="logMealSubmit" class="w-full btn-primary py-3 rounded-xl text-sm font-bold uppercase tracking-wide flex items-center justify-center gap-2">
+        <i class="ph ph-check-circle text-lg"></i>
+        <span>Log Meal</span>
+      </button>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -341,7 +356,7 @@
                   <i class="ph ph-calendar-blank text-xl"></i>
              </div>
              <p class="text-gray-500 mb-4">No meals logged for ${data.is_today ? 'today' : prettyDate(data.selected_date)}.</p>
-             <a href="/" class="btn-primary px-5 py-2 rounded-xl text-sm">Log Meal</a>
+             <button onclick="openLogMealModal()" class="btn-primary px-5 py-2 rounded-xl text-sm">Log Meal</button>
           </div>
         `;
         return;
@@ -430,9 +445,6 @@
       updateMacro('carb', g.carbs, t.carbs);
       updateMacro('fat', g.fat, t.fat);
 
-      document.getElementById('dietScore').innerText = data.adherence_avg != null ? data.adherence_avg.toFixed(1) : '-';
-      document.getElementById('dietBadge').innerText = (data.diet_type || 'General').replace(/_/g, ' ');
-
       const glasses = data.hydration.glasses || 0;
       const hContainer = document.getElementById('hydrationDrops');
       hContainer.innerHTML = '';
@@ -518,7 +530,7 @@
       }
     }
 
-    if (quickMealBtn) quickMealBtn.addEventListener('click', () => { window.location.href = '/'; });
+    if (quickMealBtn) quickMealBtn.addEventListener('click', () => openLogMealModal());
 
     if (logWaterBtn) {
       logWaterBtn.addEventListener('click', async () => {
@@ -601,5 +613,60 @@
     selectedDate = localToday;
     loadDay();
   })();
+
+  function openLogMealModal() {
+    const modal = document.getElementById('logMealModal');
+    document.getElementById('logMealText').value = '';
+    document.getElementById('logMealType').value = 'unspecified';
+    document.getElementById('logMealError').classList.add('hidden');
+    document.getElementById('logMealSubmit').disabled = false;
+    document.getElementById('logMealSubmit').innerHTML = '<i class="ph ph-check-circle text-lg"></i><span>Log Meal</span>';
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.getElementById('logMealText').focus();
+  }
+
+  function closeLogMealModal() {
+    const modal = document.getElementById('logMealModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+
+  document.getElementById('closeLogMealModal').addEventListener('click', closeLogMealModal);
+  document.getElementById('logMealBackdrop').addEventListener('click', closeLogMealModal);
+
+  document.getElementById('logMealSubmit').addEventListener('click', async () => {
+    const text = document.getElementById('logMealText').value.trim();
+    const mealType = document.getElementById('logMealType').value;
+    const errEl = document.getElementById('logMealError');
+    const submitBtn = document.getElementById('logMealSubmit');
+
+    if (!text) {
+      errEl.textContent = 'Please describe your meal.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+
+    errEl.classList.add('hidden');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="ph ph-spinner-gap animate-spin text-lg"></i><span>Logging...</span>';
+
+    try {
+      const res = await fetch('/api/v3/meals/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'text', text_input: text, meal_type: mealType })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Failed to log meal');
+      closeLogMealModal();
+      location.reload();
+    } catch (err) {
+      errEl.textContent = err.message || 'Something went wrong. Please try again.';
+      errEl.classList.remove('hidden');
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="ph ph-check-circle text-lg"></i><span>Log Meal</span>';
+    }
+  });
 </script>
 {% endblock %}

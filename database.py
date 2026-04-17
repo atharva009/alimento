@@ -11,6 +11,31 @@ from pymongo import ASCENDING, DESCENDING
 load_dotenv()
 
 class MongoDBManager:
+    """Singleton-style wrapper around a PyMongo ``MongoClient``.
+
+    Manages the connection lifecycle, collection references, and index
+    creation for all Alimento collections in MongoDB Atlas.  When
+    ``MONGODB_URI`` is absent the instance degrades gracefully: ``client``
+    and ``db`` are ``None`` and all data-access methods return safe fallback
+    values instead of raising.
+
+    Collections exposed as attributes (each is a ``pymongo.Collection``):
+
+    * ``collection`` – legacy ``analysis_history``
+    * ``users``, ``logins``, ``usage``, ``share_links``, ``hydration_logs``
+    * ``meal_logs``, ``food_items``, ``inventory_items``, ``barcode_cache``
+    * ``recipes``, ``meal_plans``, ``grocery_lists``, ``weight_logs``
+    * ``chat_sessions``, ``challenges``, ``challenge_members``
+    * ``activity_integrations``, ``notification_settings``, ``migration_state``
+    * ``user_profiles``, ``nutrition_goals``, ``diet_preferences``
+
+    Environment variables:
+
+    * ``MONGODB_URI``        – MongoDB Atlas connection string (required).
+    * ``AUTO_CREATE_INDEXES`` – Set to ``'1'`` to run :meth:`ensure_indexes`
+      at startup; omit for faster cold starts (indexes created on demand).
+    """
+
     def __init__(self):
         # Get connection string from environment variable
         self.connection_string = os.getenv('MONGODB_URI')
@@ -91,7 +116,15 @@ class MongoDBManager:
             self.db = None
 
     def ensure_indexes(self):
-        """Create required indexes (idempotent)."""
+        """Create all required MongoDB indexes (idempotent).
+
+        Safe to call multiple times; a flag prevents redundant operations in
+        the same process lifetime.
+
+        Returns:
+            ``True`` on success, ``False`` if the database is not connected or
+            index creation fails.
+        """
         if not self.client:
             print("Cannot create indexes: database not connected")
             return False
@@ -172,7 +205,12 @@ class MongoDBManager:
             return False
     
     def is_connected(self):
-        """Check if database is connected"""
+        """Ping MongoDB to verify the connection is alive.
+
+        Returns:
+            ``True`` if the ping succeeds, ``False`` otherwise (including
+            when ``client`` is ``None``).
+        """
         if not self.client:
             return False
         try:
@@ -182,7 +220,20 @@ class MongoDBManager:
             return False
     
     def save_analysis(self, analysis_data):
-        """Save analysis to MongoDB"""
+        """Persist a meal analysis document to the ``analysis_history`` collection.
+
+        Automatically sets ``timestamp`` (ISO string) and ``created_at``
+        (datetime) if absent.  Ownership fields ``user_id`` and
+        ``guest_session_id`` default to ``None`` if not supplied.
+
+        Args:
+            analysis_data: Dict containing the analysis payload.  Modified
+                           in-place to add metadata fields before insertion.
+
+        Returns:
+            ``{"success": True, "id": "<ObjectId str>"}`` on success, or
+            ``{"success": False, "error": "<message>"}`` on failure.
+        """
         if not self.client:
             return {"success": False, "error": "Database not connected"}
         
@@ -212,7 +263,16 @@ class MongoDBManager:
             return {"success": False, "error": str(e)}
     
     def get_history(self, limit=20):
-        """Get analysis history from MongoDB"""
+        """Retrieve recent meal analyses sorted newest-first.
+
+        Args:
+            limit: Maximum number of documents to return (default ``20``).
+
+        Returns:
+            List of analysis dicts with ``_id`` converted to string and a
+            ``timestamp`` ISO string derived from ``created_at``.  Returns
+            ``[]`` if the database is not connected or on error.
+        """
         if not self.client:
             print("Database not connected, returning empty history")
             return []
@@ -244,7 +304,15 @@ class MongoDBManager:
             return []
     
     def delete_analysis(self, analysis_id):
-        """Delete specific analysis by MongoDB ObjectId"""
+        """Delete a single analysis document by its string ObjectId.
+
+        Args:
+            analysis_id: Hexadecimal ObjectId string of the document to delete.
+
+        Returns:
+            ``{"success": True, "message": "..."}`` if deleted,
+            ``{"success": False, "error": "..."}`` if not found or on error.
+        """
         if not self.client:
             return {"success": False, "error": "Database not connected"}
         
@@ -266,7 +334,12 @@ class MongoDBManager:
             return {"success": False, "error": str(e)}
     
     def clear_all_history(self):
-        """Clear all analysis history"""
+        """Delete every document in the ``analysis_history`` collection.
+
+        Returns:
+            ``{"success": True, "message": "Cleared N analyses"}`` on success,
+            or ``{"success": False, "error": "..."}`` on failure.
+        """
         if not self.client:
             return {"success": False, "error": "Database not connected"}
         
@@ -282,7 +355,15 @@ class MongoDBManager:
             return {"success": False, "error": str(e)}
     
     def get_stats(self):
-        """Get database statistics"""
+        """Return basic database and collection statistics.
+
+        Returns:
+            Dict containing at minimum ``total_analyses`` (int) and
+            ``connected`` (bool).  When data exists, also includes
+            ``database_size`` and ``collection_size`` in bytes if the
+            server supports ``dbStats`` / ``collStats`` commands.
+            Returns ``{"error": "..."}`` when the database is not connected.
+        """
         if not self.client:
             return {"error": "Database not connected"}
         
@@ -316,7 +397,14 @@ class MongoDBManager:
 db_manager = None
 
 def get_db():
-    """Get database manager instance"""
+    """Return the global :class:`MongoDBManager` singleton, creating it lazily.
+
+    Subsequent calls return the same instance without reconnecting.  Safe to
+    call inside Flask's ``LocalProxy`` context.
+
+    Returns:
+        The module-level :class:`MongoDBManager` instance.
+    """
     global db_manager
     if db_manager is None:
         print("Initializing MongoDB connection...")

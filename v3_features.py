@@ -16,6 +16,7 @@ from pymongo.errors import DuplicateKeyError
 from werkzeug.local import LocalProxy
 
 from database import get_db
+from diet_config import compute_macro_adherence_10pt
 
 
 v3_bp = Blueprint("v3", __name__)
@@ -335,6 +336,9 @@ def _save_meal_log(user_id, payload):
         "barcode": payload.get("barcode"),
         "raw_input": payload.get("raw_input"),
         "metadata": payload.get("metadata", {}),
+        "personalization": {
+            "macro_adherence": payload.get("macro_adherence") or {}
+        },
         "logged_at": payload.get("logged_at") or now,
         "created_at": now,
         "updated_at": now,
@@ -730,17 +734,23 @@ Recipe pool:
 """
 
     res = _gemini_generate(prompt)
-    parsed = _parse_json_from_text(getattr(res, "text", "") if res else "")
+    raw_text = getattr(res, "text", "") if res else ""
+    print(f"[PLANNER DEBUG] gemini response length: {len(raw_text)}, first 200 chars: {raw_text[:200]!r}")
+    parsed = _parse_json_from_text(raw_text)
     if not parsed:
+        print("[PLANNER DEBUG] failed: _parse_json_from_text returned empty")
         return None
 
     if not isinstance(parsed, dict):
+        print(f"[PLANNER DEBUG] failed: parsed is not dict, got {type(parsed)}")
         return None
     ai_days = parsed.get("days")
     if not isinstance(ai_days, list):
+        print(f"[PLANNER DEBUG] failed: 'days' is not a list, got {type(ai_days)}")
         return None
 
     if len(ai_days) != 7:
+        print(f"[PLANNER DEBUG] failed: expected 7 days, got {len(ai_days)}")
         return None
 
     by_date = {}
@@ -758,8 +768,10 @@ Recipe pool:
         for slot_name in ["breakfast", "lunch", "dinner"]:
             slot = ai_slots.get(slot_name)
             if not slot:
+                print(f"[PLANNER DEBUG] failed: missing slot '{slot_name}' for date {date_key}")
                 return None
             if not slot.get("ingredients"):
+                print(f"[PLANNER DEBUG] failed: no ingredients for slot '{slot_name}' on {date_key}")
                 return None
             if not slot.get("notes"):
                 slot["notes"] = "Personalized for your goals and preferences."
@@ -770,10 +782,13 @@ Recipe pool:
         out_days.append({"date": date_key, "slots": slots})
 
     if len(out_days) != 7:
+        print(f"[PLANNER DEBUG] failed: out_days has {len(out_days)} entries")
         return None
     if _plan_has_excessive_repetition(out_days, max_occurrences=2):
+        print("[PLANNER DEBUG] failed: excessive meal repetition")
         return None
     if _plan_violates_budget(out_days, cost_index, budget_per_meal):
+        print("[PLANNER DEBUG] failed: plan violates budget")
         return None
     return out_days
 
@@ -1232,6 +1247,18 @@ def v3_meals_log():
             payload["logged_at"] = datetime.fromisoformat(str(data.get("logged_at")).replace("Z", "+00:00"))
         except Exception:
             payload["logged_at"] = now
+
+    try:
+        macro_score = compute_macro_adherence_10pt(
+            _safe_float(payload.get('calories_kcal')),
+            _safe_float(payload.get('carbs_g')),
+            _safe_float(payload.get('protein_g')),
+            _safe_float(payload.get('fat_g')),
+            user_context.get('diet_type') or 'standard_american',
+        )
+    except Exception:
+        macro_score = {"score": None, "explanation": "computation_error"}
+    payload['macro_adherence'] = macro_score
 
     meal_doc = _save_meal_log(user_id, payload)
     return jsonify({"success": True, "meal": meal_doc})
