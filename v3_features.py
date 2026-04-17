@@ -1307,6 +1307,78 @@ def v3_meals_log():
     return jsonify({"success": True, "meal": meal_doc})
 
 
+@v3_bp.route("/api/v3/meals/<meal_id>", methods=["PATCH", "DELETE"])
+def v3_meals_patch_or_delete(meal_id):
+    user_id, err = _auth_guard()
+    if err:
+        return err
+    try:
+        oid = ObjectId(meal_id)
+    except Exception:
+        return jsonify({"success": False, "error": "invalid_meal_id"}), 400
+
+    doc = db.meal_logs.find_one({"_id": oid, "user_id": user_id})
+    if not doc:
+        return jsonify({"success": False, "error": "meal_not_found"}), 404
+
+    if request.method == "DELETE":
+        db.meal_logs.delete_one({"_id": oid, "user_id": user_id})
+        return jsonify({"success": True})
+
+    body = request.get_json(silent=True) or {}
+    text_input = str(body.get("text_input") or "").strip()
+    if not text_input:
+        return jsonify({"success": False, "error": "text_input_required"}), 400
+
+    meal_type = str(body.get("meal_type") or doc.get("meal_type") or "unspecified").strip() or "unspecified"
+    user_context = _get_user_context(user_id)
+    structured = _ai_structured_from_text(text_input, user_context)
+    if not structured:
+        return jsonify(
+            {"success": False, "error": "ai_generation_failed", "message": "Gemini could not parse meal text."}
+        ), 502
+
+    try:
+        macro_score = compute_macro_adherence_10pt(
+            _safe_float(structured.get("calories_kcal")),
+            _safe_float(structured.get("protein_g")),
+            _safe_float(structured.get("carbs_g")),
+            _safe_float(structured.get("fat_g")),
+            user_context.get("diet_type") or "standard_american",
+        )
+    except Exception:
+        macro_score = {"score": None, "explanation": "computation_error"}
+
+    now = datetime.now(timezone.utc)
+    logged_at = doc.get("logged_at") or now
+
+    update_doc = {
+        "source": "text",
+        "meal_type": meal_type,
+        "diet_type": user_context.get("diet_type") or doc.get("diet_type") or "standard_american",
+        "meal_name": structured.get("meal_name") or text_input[:80],
+        "notes": str(structured.get("notes") or doc.get("notes") or ""),
+        "macros": {
+            "calories_kcal": _safe_float(structured.get("calories_kcal")),
+            "protein_g": _safe_float(structured.get("protein_g")),
+            "carbs_g": _safe_float(structured.get("carbs_g")),
+            "fat_g": _safe_float(structured.get("fat_g")),
+            "fiber_g": _safe_float(structured.get("fiber_g")),
+            "sodium_mg": _safe_float(structured.get("sodium_mg")),
+        },
+        "raw_input": text_input,
+        "metadata": {"structured": structured},
+        "barcode": None,
+        "image_base64": None,
+        "personalization": {"macro_adherence": macro_score},
+        "updated_at": now,
+        "logged_at": logged_at,
+    }
+    db.meal_logs.update_one({"_id": oid, "user_id": user_id}, {"$set": update_doc})
+    updated = db.meal_logs.find_one({"_id": oid})
+    return jsonify({"success": True, "meal": _serialize_oid(updated)})
+
+
 @v3_bp.route("/api/v3/meals")
 def v3_meals_list():
     user_id, err = _auth_guard()

@@ -204,8 +204,8 @@
       <i class="ph ph-x text-lg"></i>
     </button>
     <div class="mb-5">
-      <h2 class="text-xl font-bold font-serif-accent text-gray-900 dark:text-white">Log a Meal</h2>
-      <p class="text-sm text-gray-500 mt-1">Describe what you ate and we'll calculate the nutrition.</p>
+      <h2 id="logMealModalTitle" class="text-xl font-bold font-serif-accent text-gray-900 dark:text-white">Log a Meal</h2>
+      <p id="logMealModalSubtitle" class="text-sm text-gray-500 mt-1">Describe what you ate and we'll calculate the nutrition.</p>
     </div>
     <div class="space-y-4">
       <div>
@@ -368,6 +368,13 @@
       bar.style.width = `${w}%`;
     }
 
+    function escapeHtmlAttr(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;');
+    }
+
     function prettyDietSlug(slug) {
       if (!slug) return '';
       return String(slug)
@@ -385,10 +392,12 @@
 
     function renderMeals(data) {
       const mealsEl = document.getElementById('mealsList');
+      window.__dashboardMealsCache = data.meals || [];
       const mealsHeading = document.getElementById('mealsHeading');
       mealsHeading.textContent = data.is_today ? "Today's Meals" : `Meals on ${prettyDate(data.selected_date)}`;
 
       if (!data.meals || data.meals.length === 0) {
+        window.__dashboardMealsCache = [];
         mealsEl.innerHTML = `
           <div class="glass-panel p-8 text-center rounded-2xl border-dashed border-2 border-gray-200 dark:border-gray-700">
              <div class="w-12 h-12 bg-purple-50 dark:bg-purple-900/20 rounded-full flex items-center justify-center mx-auto mb-3 text-purple-600">
@@ -409,6 +418,8 @@
         const timeStr = m.ts ? new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
         const name = (typeof sj.meal_identification === 'object' ? sj.meal_identification?.name : sj.meal_identification) || 'Unknown Meal';
         const cal = sj.calories_kcal || (sj.total_nutrition ? sj.total_nutrition.calories : '—');
+        const sourceKind = m.source_kind || (sj.source === 'v3' ? 'v3' : 'legacy');
+        const mid = escapeHtmlAttr(m.id);
 
         let imgHtml = '<div class="w-full h-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-xs text-gray-400"><i class="ph ph-image"></i></div>';
         if (m.image_base64) {
@@ -426,18 +437,26 @@
           scoreBadge = `<span class="px-2 py-1 rounded-md text-xs font-bold ${color}">${score}/10</span>`;
         }
 
+        const editBtn = sourceKind === 'v3'
+          ? `<button type="button" class="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-purple-600 dark:hover:text-purple-400" data-meal-edit data-meal-id="${mid}" title="Edit meal" aria-label="Edit meal"><i class="ph ph-pencil-simple text-lg"></i></button>`
+          : '';
+
         return `
-          <div class="glass-panel rounded-xl p-2.5 sm:p-3 flex items-center gap-3 sm:gap-4 sm:hover:shadow-md transition-all">
+          <div class="glass-panel rounded-xl p-2.5 sm:p-3 flex items-center gap-2 sm:gap-4 sm:hover:shadow-md transition-all">
             <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0">${imgHtml}</div>
             <div class="flex-1 min-w-0">
-              <div class="flex items-center justify-between mb-1">
+              <div class="flex items-center justify-between gap-2 mb-1">
                 <h4 class="font-bold text-gray-900 dark:text-gray-100 truncate">${name}</h4>
-                <span class="text-xs text-gray-500">${timeStr}</span>
+                <span class="text-xs text-gray-500 flex-shrink-0">${timeStr}</span>
               </div>
-              <div class="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+              <div class="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm text-gray-600 dark:text-gray-400 flex-wrap">
                 <span class="flex items-center gap-1"><i class="ph ph-fire"></i> ${cal} kcal</span>
                 ${scoreBadge}
               </div>
+            </div>
+            <div class="flex flex-col gap-0.5 flex-shrink-0 self-center">
+              ${editBtn}
+              <button type="button" class="p-1.5 rounded-lg text-gray-500 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600" data-meal-delete data-meal-source-kind="${escapeHtmlAttr(sourceKind)}" data-meal-id="${mid}" title="Remove meal" aria-label="Delete meal"><i class="ph ph-trash text-lg"></i></button>
             </div>
           </div>
         `;
@@ -603,6 +622,47 @@
 
     if (quickMealBtn) quickMealBtn.addEventListener('click', () => openLogMealModal());
 
+    document.getElementById('mealsList').addEventListener('click', async (e) => {
+      const editBtn = e.target.closest('[data-meal-edit]');
+      const delBtn = e.target.closest('[data-meal-delete]');
+      if (editBtn) {
+        const id = editBtn.getAttribute('data-meal-id');
+        const meal = (window.__dashboardMealsCache || []).find((x) => x.id === id);
+        if (!meal) return;
+        const sj = meal.analysis_json || {};
+        const dispName = (typeof sj.meal_identification === 'object' ? sj.meal_identification?.name : sj.meal_identification) || meal.meal_name || 'Meal';
+        const cal = sj.calories_kcal || (sj.total_nutrition ? sj.total_nutrition.calories : '');
+        let text = (meal.raw_input && meal.raw_input !== 'manual_entry') ? String(meal.raw_input) : '';
+        if (!text && dispName) {
+          text = cal !== '' && cal !== '—' && cal != null ? `${dispName}, about ${cal} kcal` : String(dispName);
+        }
+        openLogMealModal({
+          editId: id,
+          text,
+          mealType: meal.meal_type || 'unspecified',
+        });
+        return;
+      }
+      if (delBtn) {
+        const id = delBtn.getAttribute('data-meal-id');
+        const kind = delBtn.getAttribute('data-meal-source-kind');
+        if (!id || !confirm('Remove this meal from your log?')) return;
+        try {
+          let res;
+          if (kind === 'v3') {
+            res = await fetch(`/api/v3/meals/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          } else {
+            res = await fetch(`/delete-analysis/${encodeURIComponent(id)}`, { method: 'POST' });
+          }
+          const data = await res.json().catch(() => ({}));
+          if (!data.success) throw new Error(data.error || 'Could not remove meal.');
+          await loadDay();
+        } catch (err) {
+          alert(err.message || 'Could not remove meal.');
+        }
+      }
+    });
+
     if (logWaterBtn) {
       logWaterBtn.addEventListener('click', async () => {
         await withCtaLoading(logWaterBtn, async () => {
@@ -676,8 +736,11 @@
     });
 
     selectedDate = localToday;
+    window.__dashboardReloadDay = () => loadDay();
     loadDay();
   })();
+
+  let logMealEditId = null;
 
   function dashboardMondayKey(dateStr) {
     if (!dateStr) return '';
@@ -699,13 +762,22 @@
     if (slotsEl) slotsEl.innerHTML = '';
   }
 
-  function openLogMealModal() {
+  function openLogMealModal(opts) {
+    opts = opts || {};
+    logMealEditId = opts.editId || null;
     const modal = document.getElementById('logMealModal');
-    document.getElementById('logMealText').value = '';
-    document.getElementById('logMealType').value = 'unspecified';
+    document.getElementById('logMealText').value = opts.text != null ? opts.text : '';
+    document.getElementById('logMealType').value = opts.mealType || 'unspecified';
     document.getElementById('logMealError').classList.add('hidden');
     document.getElementById('logMealSubmit').disabled = false;
-    document.getElementById('logMealSubmit').innerHTML = '<i class="ph ph-check-circle text-lg"></i><span>Log Meal</span>';
+    const isEdit = Boolean(logMealEditId);
+    document.getElementById('logMealModalTitle').textContent = isEdit ? 'Edit meal' : 'Log a Meal';
+    document.getElementById('logMealModalSubtitle').textContent = isEdit
+      ? 'Update the description; nutrition will be recalculated from your new text.'
+      : "Describe what you ate and we'll calculate the nutrition.";
+    document.getElementById('logMealSubmit').innerHTML = isEdit
+      ? '<i class="ph ph-check-circle text-lg"></i><span>Save changes</span>'
+      : '<i class="ph ph-check-circle text-lg"></i><span>Log Meal</span>';
     resetLogMealPlanPicker();
     modal.classList.remove('hidden');
     modal.classList.add('flex');
@@ -713,6 +785,7 @@
   }
 
   function closeLogMealModal() {
+    logMealEditId = null;
     const modal = document.getElementById('logMealModal');
     resetLogMealPlanPicker();
     modal.classList.add('hidden');
@@ -818,17 +891,27 @@
     errEl.classList.add('hidden');
 
     try {
+      const loadingLabel = logMealEditId ? 'Saving…' : 'Logging…';
       await withCtaLoading(submitBtn, async () => {
-        const res = await fetch('/api/v3/meals/log', {
-          method: 'POST',
+        const url = logMealEditId ? `/api/v3/meals/${encodeURIComponent(logMealEditId)}` : '/api/v3/meals/log';
+        const res = await fetch(url, {
+          method: logMealEditId ? 'PATCH' : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ source: 'text', text_input: text, meal_type: mealType })
+          body: JSON.stringify(
+            logMealEditId
+              ? { text_input: text, meal_type: mealType }
+              : { source: 'text', text_input: text, meal_type: mealType }
+          ),
         });
         const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Failed to log meal');
+        if (!data.success) throw new Error(data.error || data.message || 'Failed to save meal');
         closeLogMealModal();
-        location.reload();
-      }, { label: 'Logging…' });
+        if (typeof window.__dashboardReloadDay === 'function') {
+          await window.__dashboardReloadDay();
+        } else {
+          location.reload();
+        }
+      }, { label: loadingLabel });
     } catch (err) {
       errEl.textContent = err.message || 'Something went wrong. Please try again.';
       errEl.classList.remove('hidden');

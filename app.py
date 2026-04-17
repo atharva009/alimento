@@ -1703,7 +1703,10 @@ def dashboard_today():
                     'analysis_json': m.get('analysis_json'),
                     'personalization': m.get('personalization'),
                     'image_path': m.get('image_path'),
-                    'image_base64': m.get('image_base64')
+                    'image_base64': m.get('image_base64'),
+                    'source_kind': 'v3' if (m.get('analysis_json') or {}).get('source') == 'v3' else 'legacy',
+                    'meal_type': m.get('meal_type'),
+                    'raw_input': m.get('raw_input'),
                 } for m in meals
             ],
             'hydration': {
