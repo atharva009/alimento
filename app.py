@@ -1624,6 +1624,23 @@ def dashboard_today():
             m['_id'] = str(m['_id'])
             m['user_id'] = str(m['user_id']) if m.get('user_id') else None
 
+        v3_meals_raw = list(db.meal_logs.find({'user_id': uid, 'logged_at': {'$gte': start, '$lt': end}}).sort('logged_at', 1))
+        for m in v3_meals_raw:
+            macros = m.get('macros') or {}
+            m['_id'] = str(m['_id'])
+            m['created_at'] = m.get('logged_at') or m.get('created_at')
+            m['analysis_json'] = {
+                'calories_kcal': macros.get('calories_kcal'),
+                'protein_g': macros.get('protein_g'),
+                'carbs_g': macros.get('carbs_g'),
+                'fat_g': macros.get('fat_g'),
+                'meal_name': m.get('meal_name'),
+                'meal_identification': m.get('meal_name'),
+                'source': 'v3',
+            }
+
+        meals = sorted(meals + v3_meals_raw, key=lambda x: x.get('created_at') or x.get('logged_at') or '')
+
         total_cal = 0.0
         carbs_g = 0.0
         protein_g = 0.0
@@ -1682,7 +1699,7 @@ def dashboard_today():
             'meals': [
                 {
                     'id': m['_id'],
-                    'ts': m['created_at'].isoformat() + 'Z' if 'created_at' in m else m.get('timestamp'),
+                    'ts': (m['created_at'].isoformat() + 'Z') if hasattr(m.get('created_at'), 'isoformat') else (m.get('created_at') or m.get('timestamp')),
                     'analysis_json': m.get('analysis_json'),
                     'personalization': m.get('personalization'),
                     'image_path': m.get('image_path'),
