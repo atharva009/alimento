@@ -838,83 +838,181 @@ def analyze():
         print(f"Server error: {str(e)}")
         return jsonify({"error": f"Server error: {str(e)}"})
 
+def _history_sort_datetime(row):
+    """Parse unified history row timestamp for sorting (newest first)."""
+    t = row.get("timestamp")
+    if isinstance(t, datetime):
+        dt = t
+    elif isinstance(t, str):
+        try:
+            dt = datetime.fromisoformat(t.replace("Z", "+00:00"))
+        except Exception:
+            dt = datetime.min.replace(tzinfo=timezone.utc)
+    else:
+        dt = datetime.min.replace(tzinfo=timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _history_row_json_safe(row):
+    """Top-level BSON types -> JSON-serializable (legacy docs may include datetime)."""
+    out = {}
+    for k, v in row.items():
+        if isinstance(v, datetime):
+            out[k] = v.isoformat()
+        elif isinstance(v, ObjectId):
+            out[k] = str(v)
+        else:
+            out[k] = v
+    return out
+
+
+def _meal_log_to_history_item(doc, fallback_diet="standard_american"):
+    """Map a meal_logs document to the shape expected by history.html."""
+    macros = doc.get("macros") or {}
+    cal = macros.get("calories_kcal")
+    pg = macros.get("protein_g")
+    cg = macros.get("carbs_g")
+    fg = macros.get("fat_g")
+    meal_name = doc.get("meal_name") or "Meal"
+    src = doc.get("source") or "manual"
+    notes = (doc.get("notes") or "").strip()
+    raw = (doc.get("raw_input") or "").strip()
+    diet = doc.get("diet_type") or fallback_diet
+    logged = doc.get("logged_at") or doc.get("created_at")
+    if isinstance(logged, datetime):
+        if logged.tzinfo:
+            ts = logged.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        else:
+            ts = logged.isoformat() + "Z"
+    else:
+        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    macro_line = ""
+    if cal is not None:
+        try:
+            macro_line = f"{float(cal):.0f} kcal"
+            macro_line += f" · P {float(pg or 0):.0f}g · C {float(cg or 0):.0f}g · F {float(fg or 0):.0f}g"
+        except (TypeError, ValueError):
+            macro_line = str(cal) + " kcal"
+
+    desc_parts = []
+    if raw and raw != "manual_entry":
+        desc_parts.append(f"**Description:** {raw}")
+    if notes:
+        desc_parts.append(f"**Notes:** {notes}")
+    analysis_md = f"## {meal_name}\n\n**Source:** {src}  \n**Macros:** {macro_line}\n\n"
+    if desc_parts:
+        analysis_md += "\n\n".join(desc_parts)
+
+    aj = {
+        "meal_identification": {"name": meal_name},
+        "calories_kcal": cal,
+    }
+    if cal is not None:
+        aj["nutritional_estimation"] = {"calories": cal}
+
+    return {
+        "_id": str(doc["_id"]),
+        "history_kind": "v3",
+        "timestamp": ts,
+        "analysis": analysis_md,
+        "dietary_goal": diet,
+        "analysis_json": aj,
+        "image_base64": doc.get("image_base64"),
+        "image_path": doc.get("image_path"),
+        "meal_type": doc.get("meal_type"),
+        "source": src,
+    }
+
+
+def _build_unified_history(uid):
+    """Legacy photo analyses (db.collection) + v3 meal_logs, newest first, capped."""
+    prefs = db.diet_preferences.find_one({"user_id": uid}) or {}
+    fallback_diet = prefs.get("diet_type") or "standard_american"
+
+    history = []
+    cursor = db.collection.find({"user_id": uid}).sort("created_at", -1).limit(200)
+    for doc in cursor:
+        row = dict(doc)
+        row["_id"] = str(row["_id"])
+        if "user_id" in row and row["user_id"] is not None:
+            row["user_id"] = str(row["user_id"])
+        ca = row.get("created_at")
+        if isinstance(ca, datetime):
+            row["timestamp"] = (
+                ca.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                if ca.tzinfo
+                else ca.isoformat() + "Z"
+            )
+        row["history_kind"] = "legacy"
+        history.append(_history_row_json_safe(row))
+
+    ml_cursor = db.meal_logs.find({"user_id": uid}).sort("logged_at", -1).limit(500)
+    for doc in ml_cursor:
+        history.append(_meal_log_to_history_item(doc, fallback_diet))
+
+    history.sort(key=_history_sort_datetime, reverse=True)
+    return history[:400]
+
+
 @app.route('/history')
 def history():
-    """Display analysis history from MongoDB - SIGNED IN USERS ONLY"""
+    """Analysis + meal log timeline (client loads via /api/history)."""
     try:
-        # Only show history for signed-in users
-        if not (current_user and getattr(current_user, 'is_authenticated', False)):
-            # For guests, show empty history
-            return render_template('history.html', history=[], is_guest=True)
-        
-        # Get history for signed-in user only
-        history_data = db.collection.find({'user_id': ObjectId(current_user.id)}).sort('created_at', -1).limit(20)
-
-        # Normalize docs
-        history = []
-        for doc in history_data:
-            doc['_id'] = str(doc['_id'])
-            if 'created_at' in doc:
-                doc['timestamp'] = doc['created_at'].isoformat()
-            history.append(doc)
-        return render_template('history.html', history=history, is_guest=False)
+        is_guest = not (current_user and getattr(current_user, "is_authenticated", False))
+        return render_template("history.html", history=[], is_guest=is_guest)
     except Exception as e:
         print(f"History error: {e}")
-        return render_template('history.html', history=[], is_guest=True)
+        return render_template("history.html", history=[], is_guest=True)
 
 @app.route('/api/history')
 def api_history():
-    """API endpoint to get analysis history - SIGNED IN USERS ONLY"""
+    """Unified timeline: legacy analyses and v3 meal_logs, newest first."""
     try:
-        # Only return history for signed-in users
-        if not (current_user and getattr(current_user, 'is_authenticated', False)):
-            return jsonify({
-                "success": True,
-                "history": [],
-                "count": 0,
-                "is_guest": True
-            })
-        
-        # Get history for signed-in user only
-        cursor = db.collection.find({'user_id': ObjectId(current_user.id)}).sort('created_at', -1).limit(20)
+        if not (current_user and getattr(current_user, "is_authenticated", False)):
+            return jsonify(
+                {"success": True, "history": [], "count": 0, "is_guest": True}
+            )
 
-        history = []
-        for doc in cursor:
-            doc['_id'] = str(doc['_id'])
-            if 'user_id' in doc:
-                doc['user_id'] = str(doc['user_id'])
-            if 'created_at' in doc:
-                doc['timestamp'] = doc['created_at'].isoformat() + 'Z'
-            history.append(doc)
-        
-        return jsonify({
-            "success": True,
-            "history": history,
-            "count": len(history),
-            "is_guest": False,
-            "user_id": current_user.id
-        })
+        uid = ObjectId(current_user.id)
+        history = _build_unified_history(uid)
+
+        return jsonify(
+            {
+                "success": True,
+                "history": history,
+                "count": len(history),
+                "is_guest": False,
+                "user_id": current_user.id,
+            }
+        )
     except Exception as e:
         print(f"API History error: {e}")
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "history": [],
-            "is_guest": True
-        })
+        return jsonify(
+            {"success": False, "error": str(e), "history": [], "is_guest": True}
+        )
 
 @app.route('/clear-history', methods=['POST'])
 @app.route('/api/history/clear', methods=['POST'])
 def clear_history():
-    """Clear analysis history - SIGNED IN USERS ONLY"""
+    """Clear legacy analyses and v3 meal logs for the current user."""
     try:
-        # Only allow signed-in users to clear history
-        if not (current_user and getattr(current_user, 'is_authenticated', False)):
+        if not (current_user and getattr(current_user, "is_authenticated", False)):
             return jsonify({"success": False, "error": "Must be signed in to clear history"})
-        
-        # Clear only current user's history
-        res = db.collection.delete_many({'user_id': ObjectId(current_user.id)})
-        return jsonify({"success": True, "deleted_count": res.deleted_count})
+
+        uid = ObjectId(current_user.id)
+        res_legacy = db.collection.delete_many({"user_id": uid})
+        res_v3 = db.meal_logs.delete_many({"user_id": uid})
+        return jsonify(
+            {
+                "success": True,
+                "deleted_count": res_legacy.deleted_count + res_v3.deleted_count,
+                "deleted_legacy": res_legacy.deleted_count,
+                "deleted_meal_logs": res_v3.deleted_count,
+            }
+        )
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
