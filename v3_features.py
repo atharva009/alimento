@@ -2530,6 +2530,24 @@ def v3_social_join_challenge(challenge_id):
     return jsonify({"success": True})
 
 
+@v3_bp.route("/api/v3/social/challenges/<challenge_id>/leave", methods=["POST"])
+def v3_social_leave_challenge(challenge_id):
+    user_id, err = _auth_guard()
+    if err:
+        return err
+    try:
+        cid = ObjectId(challenge_id)
+    except Exception:
+        return jsonify({"success": False, "error": "invalid_challenge_id"}), 400
+
+    challenge = db.challenges.find_one({"_id": cid, "is_active": True})
+    if not challenge:
+        return jsonify({"success": False, "error": "challenge_not_found"}), 404
+
+    db.challenge_members.delete_one({"challenge_id": cid, "user_id": user_id})
+    return jsonify({"success": True})
+
+
 @v3_bp.route("/api/v3/social/challenges/<challenge_id>/leaderboard")
 def v3_social_leaderboard(challenge_id):
     user_id, err = _auth_guard()
