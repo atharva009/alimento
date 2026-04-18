@@ -6,12 +6,15 @@ from io import BytesIO
 import os
 import json
 import re
+import random
+import time
 import uuid
 from zoneinfo import ZoneInfo
 
 import requests
 from PIL import Image
 import google.generativeai as genai
+from google.api_core import exceptions as google_api_exceptions
 from pymongo.errors import DuplicateKeyError
 from werkzeug.local import LocalProxy
 
@@ -33,13 +36,40 @@ if GEMINI_API_KEY:
         _v3_model = None
 
 
-def _gemini_generate(content, max_output_tokens=4096, temperature=0.2):
+def _gemini_generate(content, max_output_tokens=4096, temperature=0.2, max_retries=4):
+    """Call Gemini with retries for transient failures (rate limits, 5xx, empty text)."""
     if not _v3_model:
         return None
-    try:
-        return _v3_model.generate_content(content)
-    except Exception:
-        return None
+
+    retryable_types = (
+        google_api_exceptions.ResourceExhausted,
+        google_api_exceptions.ServiceUnavailable,
+        google_api_exceptions.DeadlineExceeded,
+        google_api_exceptions.InternalServerError,
+    )
+
+    last_issue = None
+    for attempt in range(max_retries):
+        try:
+            resp = _v3_model.generate_content(content)
+            try:
+                text = (getattr(resp, "text", None) or "").strip()
+            except Exception:
+                text = ""
+            if text:
+                return resp
+            last_issue = "empty_or_blocked_response"
+        except retryable_types as exc:
+            last_issue = exc
+        except Exception as exc:
+            last_issue = exc
+
+        if attempt < max_retries - 1:
+            delay = min(8.0, 0.7 * (2**attempt)) + random.random() * 0.4
+            time.sleep(delay)
+
+    print(f"[Gemini] generate_content failed after {max_retries} attempt(s): {last_issue!r}")
+    return None
 
 
 def _is_authed():
@@ -207,10 +237,36 @@ def _to_base64_jpeg(img, max_size=640):
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def _lookup_barcode_openfoodfacts(barcode):
+_OPENFOODFACTS_HEADERS = {
+    "User-Agent": "Alimento/1.0 (https://world.openfoodfacts.org/data)",
+    "Accept": "application/json",
+}
+
+
+def _barcode_candidates(stripped_digits: str):
+    """Try UPC-A (12) as EAN-13 (leading 0) and the reverse — OFF often keys products one way."""
+    c = re.sub(r"\D", "", stripped_digits or "")
+    if not c:
+        return []
+    out, seen = [], set()
+
+    def push(x):
+        if x and x not in seen:
+            seen.add(x)
+            out.append(x)
+
+    push(c)
+    if len(c) == 12:
+        push("0" + c)
+    if len(c) == 13 and c.startswith("0"):
+        push(c[1:])
+    return out
+
+
+def _lookup_barcode_openfoodfacts_once(code):
     try:
-        url = f"https://world.openfoodfacts.org/api/v2/product/{barcode}.json"
-        resp = requests.get(url, timeout=15)
+        url = f"https://world.openfoodfacts.org/api/v2/product/{code}.json"
+        resp = requests.get(url, timeout=18, headers=_OPENFOODFACTS_HEADERS)
         resp.raise_for_status()
         payload = resp.json() or {}
         if payload.get("status") != 1:
@@ -219,7 +275,7 @@ def _lookup_barcode_openfoodfacts(barcode):
         nutr = product.get("nutriments") or {}
         serving_size = product.get("serving_size")
         return {
-            "barcode": barcode,
+            "barcode": code,
             "name": product.get("product_name") or product.get("generic_name") or "Unknown packaged food",
             "brand": product.get("brands", ""),
             "serving_size": serving_size,
@@ -234,6 +290,18 @@ def _lookup_barcode_openfoodfacts(barcode):
         }
     except Exception:
         return None
+
+
+def _lookup_barcode_openfoodfacts(barcode):
+    """Resolve barcode via Open Food Facts; tries UPC/EAN variants (OFF etiquette: User-Agent)."""
+    primary = re.sub(r"\D", "", barcode or "")
+    for cand in _barcode_candidates(primary):
+        hit = _lookup_barcode_openfoodfacts_once(cand)
+        if hit:
+            hit["barcode"] = primary
+            hit["off_lookup_code"] = cand
+            return hit
+    return None
 
 
 def _ai_structured_from_text(meal_text, user_context=None):
@@ -1114,9 +1182,10 @@ def v3_barcode_lookup(barcode):
 
     barcode = re.sub(r"\D", "", barcode or "")
     if len(barcode) < 8:
-        return jsonify({"success": False, "error": "invalid_barcode"}), 400
+        return jsonify({"success": False, "error": "invalid_barcode", "message": "Enter at least 8 digits."}), 400
 
-    cached = db.barcode_cache.find_one({"barcode": barcode})
+    cands = _barcode_candidates(barcode)
+    cached = db.barcode_cache.find_one({"barcode": {"$in": cands}})
     if cached:
         doc = _serialize_oid(cached)
         doc.pop("raw", None)
@@ -1124,7 +1193,13 @@ def v3_barcode_lookup(barcode):
 
     fetched = _lookup_barcode_openfoodfacts(barcode)
     if not fetched:
-        return jsonify({"success": False, "error": "barcode_not_found"}), 404
+        return jsonify(
+            {
+                "success": False,
+                "error": "barcode_not_found",
+                "message": "No product for this barcode in Open Food Facts. Check the digits or try Text / Manual.",
+            }
+        ), 404
 
     now = datetime.now(timezone.utc)
     fetched_doc = {
@@ -1198,13 +1273,22 @@ def v3_meals_log():
     elif source == "barcode":
         barcode = (request.form.get("barcode") if request.form else None) or data.get("barcode")
         if not barcode:
-            return jsonify({"success": False, "error": "barcode_required"}), 400
+            return jsonify(
+                {"success": False, "error": "barcode_required", "message": "Enter a barcode number."}
+            ), 400
         barcode = re.sub(r"\D", "", barcode)
-        cached = db.barcode_cache.find_one({"barcode": barcode})
+        bc_candidates = _barcode_candidates(barcode)
+        cached = db.barcode_cache.find_one({"barcode": {"$in": bc_candidates}})
         if not cached:
             fetched = _lookup_barcode_openfoodfacts(barcode)
             if not fetched:
-                return jsonify({"success": False, "error": "barcode_not_found"}), 404
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "barcode_not_found",
+                        "message": "No product for this barcode in Open Food Facts. Check the digits or try Text / Manual.",
+                    }
+                ), 404
             cached = {
                 **fetched,
                 "barcode": barcode,
@@ -1959,11 +2043,14 @@ def v3_planner_generate():
     recent_meals_count = len(recent_meals)
     ai_days = _ai_generate_week_plan(week_start, ai_context, recipes)
     if not ai_days:
+        time.sleep(1.0 + random.random() * 0.5)
+        ai_days = _ai_generate_week_plan(week_start, ai_context, recipes)
+    if not ai_days:
         return jsonify(
             {
                 "success": False,
                 "error": "ai_generation_failed",
-                "message": "AI could not generate a valid plan. Please try again.",
+                "message": "AI could not generate a valid plan. Please try again in a moment.",
             }
         ), 502
 
