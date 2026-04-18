@@ -160,6 +160,20 @@
         el.className = `text-xs mt-3 ${ok ? 'text-purple-600 dark:text-purple-400' : 'text-red-600 dark:text-red-400'}`;
     }
 
+    function mealLogApiMessage(data) {
+        if (!data) return 'Something went wrong.';
+        if (data.message) return data.message;
+        const byCode = {
+            barcode_not_found: 'This barcode was not found in Open Food Facts. Check the digits, or use Text / Manual.',
+            barcode_required: 'Enter a barcode first.',
+            text_input_required: 'Describe your meal first.',
+            invalid_barcode: 'Barcode must be at least 8 digits.',
+            ai_generation_failed: 'Could not analyze this meal right now. Try again in a moment.',
+            ai_unavailable: 'AI is temporarily unavailable.',
+        };
+        return byCode[data.error] || data.error || 'Could not log meal.';
+    }
+
     function localDateString(d = new Date()) {
         const copy = new Date(d);
         const pad = (n) => String(n).padStart(2, '0');
@@ -533,7 +547,7 @@
                 body: JSON.stringify({ source: 'text', text_input: text, meal_type: 'unspecified' })
             });
             const data = await res.json();
-            showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : (data.error || 'Failed'), !!data.success);
+            showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : mealLogApiMessage(data), !!data.success);
             if (data.success) document.getElementById('textInput').value = '';
             if (data.success) loadMealsByDate();
         }, { label: 'Logging…' });
@@ -551,7 +565,7 @@
                 body: JSON.stringify({ source: 'barcode', barcode, servings })
             });
             const data = await res.json();
-            showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : (data.error || 'Failed'), !!data.success);
+            showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : mealLogApiMessage(data), !!data.success);
             if (data.success) document.getElementById('barcodeInput').value = '';
             if (data.success) loadMealsByDate();
         }, { label: 'Logging…' });
@@ -574,7 +588,7 @@
                 body: JSON.stringify(payload)
             });
             const data = await res.json();
-            showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : (data.error || 'Failed'), !!data.success);
+            showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : mealLogApiMessage(data), !!data.success);
             if (data.success) loadMealsByDate();
         }, { label: 'Logging…' });
     }
@@ -590,7 +604,7 @@
                 body: JSON.stringify({ source: 'image', image_url })
             });
             const data = await res.json();
-            showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : (data.error || 'Failed'), !!data.success);
+            showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : mealLogApiMessage(data), !!data.success);
             if (data.success) loadMealsByDate();
         }, { label: 'Analyzing…' });
     }
