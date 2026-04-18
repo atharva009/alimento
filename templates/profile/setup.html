@@ -939,13 +939,13 @@
 
         // Save draft functionality
         document.getElementById('saveDraftBtn').addEventListener('click', function () {
-            saveProfile(true);
+            withCtaLoading(this, () => saveProfile(true), { label: 'Saving…' });
         });
 
         // Form submission
         // Form submission (Bind to button click instead of form submit to prevent browser validation on hidden fields)
         document.getElementById('submitBtn').addEventListener('click', function () {
-            saveProfile(false);
+            withCtaLoading(this, () => saveProfile(false), { label: 'Submitting…' });
         });
 
         async function saveProfile(isDraft = false) {

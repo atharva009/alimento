@@ -176,8 +176,10 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        document.getElementById('addRecipe').addEventListener('click', addRecipe);
-        document.getElementById('refreshRecipes').addEventListener('click', loadRecipes);
+        const addRecipeBtn = document.getElementById('addRecipe');
+        const refreshRecipesBtn = document.getElementById('refreshRecipes');
+        addRecipeBtn.addEventListener('click', () => withCtaLoading(addRecipeBtn, addRecipe, { label: 'Saving…' }));
+        refreshRecipesBtn.addEventListener('click', () => withCtaLoading(refreshRecipesBtn, loadRecipes, { label: 'Refreshing…' }));
         loadContextBanner();
         loadRecipes();
     });

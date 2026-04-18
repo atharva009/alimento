@@ -217,7 +217,7 @@
                         <div class="flex gap-2 sm:flex-col sm:w-36">
                             <button class="btn-secondary rounded-xl py-2 text-xs font-semibold challenge-action flex-1" data-action="leaderboard" data-id="${escapeHtml(c._id)}">View board</button>
                             ${c.joined
-                                ? '<button class="btn-secondary rounded-xl py-2 text-xs font-semibold opacity-70 cursor-default flex-1" disabled>Joined</button>'
+                                ? `<button type="button" class="btn-secondary rounded-xl py-2 text-xs font-semibold challenge-action flex-1 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30" data-action="leave" data-id="${escapeHtml(c._id)}">Leave</button>`
                                 : `<button class="btn-primary rounded-xl py-2 text-xs font-semibold challenge-action flex-1" data-action="join" data-id="${escapeHtml(c._id)}">Join</button>`}
                         </div>
                     </div>
@@ -236,6 +236,17 @@
         challengesCache = data.challenges || [];
         renderStats(challengesCache);
         renderChallengeList();
+
+        if (!challengesCache.length) {
+            currentChallengeId = null;
+            document.getElementById('leaderboardLabel').textContent = 'Pick a challenge to see rankings';
+            const goalChip = document.getElementById('leaderboardGoal');
+            goalChip.classList.add('hidden');
+            goalChip.textContent = '';
+            document.getElementById('leaderboardList').innerHTML =
+                '<div class="surface-solid rounded-2xl p-4 text-sm text-gray-500">No active challenges yet.</div>';
+            return;
+        }
 
         if (!currentChallengeId && challengesCache.length) {
             currentChallengeId = challengesCache[0]._id;
@@ -267,31 +278,28 @@
             return;
         }
 
-        createBtn.disabled = true;
-        createBtn.classList.add('opacity-70', 'cursor-not-allowed');
-        try {
-            const res = await fetch('/api/v3/social/challenges', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            const data = await res.json();
-            if (!data.success) {
-                setChallengeStatus(data.error || 'Could not create challenge.', false);
-                return;
-            }
+        await withCtaLoading(createBtn, async () => {
+            try {
+                const res = await fetch('/api/v3/social/challenges', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    setChallengeStatus(data.error || 'Could not create challenge.', false);
+                    return;
+                }
 
-            setChallengeStatus('Challenge created successfully.', true);
-            document.getElementById('challengeName').value = '';
-            document.getElementById('challengeDescription').value = '';
-            currentChallengeId = data.challenge?._id || null;
-            await loadChallenges();
-        } catch (_) {
-            setChallengeStatus('Network error while creating challenge.', false);
-        } finally {
-            createBtn.disabled = false;
-            createBtn.classList.remove('opacity-70', 'cursor-not-allowed');
-        }
+                setChallengeStatus('Challenge created successfully.', true);
+                document.getElementById('challengeName').value = '';
+                document.getElementById('challengeDescription').value = '';
+                currentChallengeId = data.challenge?._id || null;
+                await loadChallenges();
+            } catch (_) {
+                setChallengeStatus('Network error while creating challenge.', false);
+            }
+        }, { label: 'Creating…' });
     }
 
     async function joinChallenge(id) {
@@ -304,6 +312,20 @@
         currentChallengeId = id;
         await loadChallenges();
         await loadLeaderboard(id);
+    }
+
+    async function leaveChallenge(id) {
+        const res = await fetch(`/api/v3/social/challenges/${id}/leave`, { method: 'POST' });
+        const data = await res.json();
+        if (!data.success) {
+            setChallengeStatus(data.error || 'Could not leave challenge.', false);
+            return;
+        }
+        if (currentChallengeId === id) {
+            currentChallengeId = null;
+        }
+        setChallengeStatus('You left the challenge.', true);
+        await loadChallenges();
     }
 
     async function loadLeaderboard(id) {
@@ -371,7 +393,8 @@
         updateDurationLabel();
         document.getElementById('challengeDuration').addEventListener('input', updateDurationLabel);
         document.getElementById('createChallenge').addEventListener('click', createChallenge);
-        document.getElementById('refreshChallenges').addEventListener('click', loadChallenges);
+        const refreshChallengesBtn = document.getElementById('refreshChallenges');
+        refreshChallengesBtn.addEventListener('click', () => withCtaLoading(refreshChallengesBtn, loadChallenges, { label: 'Refreshing…' }));
         document.getElementById('challengeSearch').addEventListener('input', renderChallengeList);
         document.getElementById('challengeGoalFilter').addEventListener('change', renderChallengeList);
 
@@ -383,7 +406,10 @@
             if (!id || !action) return;
 
             if (action === 'join') {
-                await joinChallenge(id);
+                await withCtaLoading(btn, () => joinChallenge(id), { label: 'Joining…' });
+            } else if (action === 'leave') {
+                if (!confirm('Leave this challenge? You can join again later from this page.')) return;
+                await withCtaLoading(btn, () => leaveChallenge(id), { label: 'Leaving…' });
             } else if (action === 'leaderboard') {
                 await loadLeaderboard(id);
                 renderChallengeList();

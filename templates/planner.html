@@ -65,13 +65,13 @@
                 <div id="tab-text" class="log-pane space-y-3">
                     <textarea id="textInput" rows="3" class="input-glass w-full rounded-xl px-3 py-2 text-sm"
                         placeholder="Example: Grilled chicken bowl with rice and broccoli"></textarea>
-                    <button onclick="submitTextLog()" class="btn-primary w-full py-2 rounded-lg text-sm font-semibold">Log Text Meal</button>
+                    <button type="button" id="logTextMealBtn" onclick="submitTextLog(this)" class="btn-primary w-full py-2 rounded-lg text-sm font-semibold">Log Text Meal</button>
                 </div>
 
                 <div id="tab-barcode" class="log-pane hidden space-y-3">
                     <input id="barcodeInput" class="input-glass w-full rounded-xl px-3 py-2 text-sm" placeholder="Enter barcode">
                     <input id="barcodeServings" type="number" step="0.1" value="1" class="input-glass w-full rounded-xl px-3 py-2 text-sm" placeholder="Servings">
-                    <button onclick="submitBarcodeLog()" class="btn-primary w-full py-2 rounded-lg text-sm font-semibold">Log Barcode Meal</button>
+                    <button type="button" id="logBarcodeMealBtn" onclick="submitBarcodeLog(this)" class="btn-primary w-full py-2 rounded-lg text-sm font-semibold">Log Barcode Meal</button>
                 </div>
 
                 <div id="tab-manual" class="log-pane hidden grid grid-cols-2 gap-2">
@@ -80,12 +80,12 @@
                     <input id="manualPro" class="input-glass rounded-xl px-3 py-2 text-sm" placeholder="Protein g">
                     <input id="manualCarb" class="input-glass rounded-xl px-3 py-2 text-sm" placeholder="Carbs g">
                     <input id="manualFat" class="input-glass rounded-xl px-3 py-2 text-sm" placeholder="Fat g">
-                    <button onclick="submitManualLog()" class="btn-primary col-span-2 py-2 rounded-lg text-sm font-semibold">Log Manual Meal</button>
+                    <button type="button" id="logManualMealBtn" onclick="submitManualLog(this)" class="btn-primary col-span-2 py-2 rounded-lg text-sm font-semibold">Log Manual Meal</button>
                 </div>
 
                 <div id="tab-image" class="log-pane hidden space-y-3">
                     <input id="imageUrlInput" class="input-glass w-full rounded-xl px-3 py-2 text-sm" placeholder="https://...">
-                    <button onclick="submitImageLog()" class="btn-primary w-full py-2 rounded-lg text-sm font-semibold">Analyze + Log Image</button>
+                    <button type="button" id="logImageMealBtn" onclick="submitImageLog(this)" class="btn-primary w-full py-2 rounded-lg text-sm font-semibold">Analyze + Log Image</button>
                 </div>
                 <p id="logStatus" class="text-xs text-gray-500 mt-3"></p>
             </div>
@@ -522,36 +522,42 @@
         }
     }
 
-    async function submitTextLog() {
+    async function submitTextLog(trigger) {
         const text = document.getElementById('textInput').value.trim();
         if (!text) return;
-        const res = await fetch('/api/v3/meals/log', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source: 'text', text_input: text, meal_type: 'unspecified' })
-        });
-        const data = await res.json();
-        showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : (data.error || 'Failed'), !!data.success);
-        if (data.success) document.getElementById('textInput').value = '';
-        if (data.success) loadMealsByDate();
+        const btn = trigger && trigger.closest ? trigger.closest('button') : document.getElementById('logTextMealBtn');
+        await withCtaLoading(btn, async () => {
+            const res = await fetch('/api/v3/meals/log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: 'text', text_input: text, meal_type: 'unspecified' })
+            });
+            const data = await res.json();
+            showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : (data.error || 'Failed'), !!data.success);
+            if (data.success) document.getElementById('textInput').value = '';
+            if (data.success) loadMealsByDate();
+        }, { label: 'Logging…' });
     }
 
-    async function submitBarcodeLog() {
+    async function submitBarcodeLog(trigger) {
         const barcode = document.getElementById('barcodeInput').value.trim();
         const servings = document.getElementById('barcodeServings').value || 1;
         if (!barcode) return;
-        const res = await fetch('/api/v3/meals/log', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source: 'barcode', barcode, servings })
-        });
-        const data = await res.json();
-        showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : (data.error || 'Failed'), !!data.success);
-        if (data.success) document.getElementById('barcodeInput').value = '';
-        if (data.success) loadMealsByDate();
+        const btn = trigger && trigger.closest ? trigger.closest('button') : document.getElementById('logBarcodeMealBtn');
+        await withCtaLoading(btn, async () => {
+            const res = await fetch('/api/v3/meals/log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: 'barcode', barcode, servings })
+            });
+            const data = await res.json();
+            showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : (data.error || 'Failed'), !!data.success);
+            if (data.success) document.getElementById('barcodeInput').value = '';
+            if (data.success) loadMealsByDate();
+        }, { label: 'Logging…' });
     }
 
-    async function submitManualLog() {
+    async function submitManualLog(trigger) {
         const payload = {
             source: 'manual',
             meal_name: document.getElementById('manualName').value || 'Manual meal',
@@ -560,27 +566,33 @@
             carbs_g: Number(document.getElementById('manualCarb').value || 0),
             fat_g: Number(document.getElementById('manualFat').value || 0)
         };
-        const res = await fetch('/api/v3/meals/log', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : (data.error || 'Failed'), !!data.success);
-        if (data.success) loadMealsByDate();
+        const btn = trigger && trigger.closest ? trigger.closest('button') : document.getElementById('logManualMealBtn');
+        await withCtaLoading(btn, async () => {
+            const res = await fetch('/api/v3/meals/log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : (data.error || 'Failed'), !!data.success);
+            if (data.success) loadMealsByDate();
+        }, { label: 'Logging…' });
     }
 
-    async function submitImageLog() {
+    async function submitImageLog(trigger) {
         const image_url = document.getElementById('imageUrlInput').value.trim();
         if (!image_url) return;
-        const res = await fetch('/api/v3/meals/log', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source: 'image', image_url })
-        });
-        const data = await res.json();
-        showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : (data.error || 'Failed'), !!data.success);
-        if (data.success) loadMealsByDate();
+        const btn = trigger && trigger.closest ? trigger.closest('button') : document.getElementById('logImageMealBtn');
+        await withCtaLoading(btn, async () => {
+            const res = await fetch('/api/v3/meals/log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: 'image', image_url })
+            });
+            const data = await res.json();
+            showLogStatus(data.success ? `Logged ${data.meal.meal_name}` : (data.error || 'Failed'), !!data.success);
+            if (data.success) loadMealsByDate();
+        }, { label: 'Analyzing…' });
     }
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -636,9 +648,12 @@
         });
 
         setupTabs();
-        document.getElementById('loadWeek').addEventListener('click', loadWeek);
-        document.getElementById('generatePlan').addEventListener('click', generatePlan);
-        document.getElementById('savePlan').addEventListener('click', saveWeek);
+        const loadWeekBtn = document.getElementById('loadWeek');
+        const generatePlanBtn = document.getElementById('generatePlan');
+        const savePlanBtn = document.getElementById('savePlan');
+        loadWeekBtn.addEventListener('click', () => withCtaLoading(loadWeekBtn, loadWeek, { label: 'Loading…' }));
+        generatePlanBtn.addEventListener('click', () => withCtaLoading(generatePlanBtn, generatePlan, { label: 'Generating…' }));
+        savePlanBtn.addEventListener('click', () => withCtaLoading(savePlanBtn, saveWeek, { label: 'Saving…' }));
         document.getElementById('prevWeek').addEventListener('click', () => {
             const w = weekPicker.value();
             weekPicker.setValue(shiftDate(w, -7), true);

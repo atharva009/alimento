@@ -611,6 +611,21 @@ def _normalize_slots_map(slots):
     return mapped
 
 
+def _planner_ingredients_from_pool(recipe_name, recipes, recipe_pool):
+    """Match AI meal name to saved recipes so we can recover when the model omits ingredients."""
+    nk = _name_key(recipe_name)
+    if not nk:
+        return None
+    for coll in (recipes, recipe_pool):
+        for r in coll or []:
+            if _name_key(r.get("name")) != nk:
+                continue
+            out = [str(x).strip() for x in (r.get("ingredients") or []) if str(x).strip()]
+            if out:
+                return out[:16]
+    return None
+
+
 def _plan_has_excessive_repetition(days, max_occurrences=2):
     counts = {}
     prev_by_slot = {}
@@ -720,6 +735,7 @@ Rules:
 - If budget_per_meal is set (>0), each chosen meal should stay within that budget.
 - If budget_per_meal is set and recipe_pool has costs, choose meals strictly from recipe_pool so costs are enforceable.
 - Use recipe description and steps context from recipe_pool to improve plan quality.
+- Every slot MUST include "ingredients" as a JSON array with at least 3 non-empty strings (required for grocery list).
 
 User profile and goals context (from form):
 {json.dumps(ai_context.get("basic_info") or {})}
@@ -770,9 +786,26 @@ Recipe pool:
             if not slot:
                 print(f"[PLANNER DEBUG] failed: missing slot '{slot_name}' for date {date_key}")
                 return None
-            if not slot.get("ingredients"):
-                print(f"[PLANNER DEBUG] failed: no ingredients for slot '{slot_name}' on {date_key}")
-                return None
+            ings = slot.get("ingredients") if isinstance(slot.get("ingredients"), list) else []
+            if not ings:
+                recovered = _planner_ingredients_from_pool(
+                    slot.get("recipe_name"), recipes, recipe_pool
+                )
+                if recovered:
+                    slot["ingredients"] = recovered
+                    print(
+                        f"[PLANNER DEBUG] repaired empty ingredients for '{slot_name}' on {date_key} from recipe pool"
+                    )
+                else:
+                    slot["ingredients"] = [
+                        "Protein of choice",
+                        "Vegetables or salad",
+                        "Starch or grain as needed",
+                        "Seasonings and oil to taste",
+                    ]
+                    print(
+                        f"[PLANNER DEBUG] repaired empty ingredients for '{slot_name}' on {date_key} with defaults"
+                    )
             if not slot.get("notes"):
                 slot["notes"] = "Personalized for your goals and preferences."
             slots.append(slot)
@@ -939,8 +972,17 @@ def _context_missing_fields(user_id):
     return missing
 
 
+def _as_utc_aware(dt):
+    """Mongo often stores naive UTC datetimes; compare everything as timezone-aware UTC."""
+    if not isinstance(dt, datetime):
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _inventory_status(item, now=None):
-    now = now or datetime.now(timezone.utc)
+    now = _as_utc_aware(now or datetime.now(timezone.utc))
     quantity = _safe_float(item.get("quantity"), 0)
     threshold = _safe_float(item.get("low_stock_threshold"), 1)
     expires_at = item.get("expires_at")
@@ -951,6 +993,7 @@ def _inventory_status(item, now=None):
             expires_at = None
     days_left = None
     if expires_at and isinstance(expires_at, datetime):
+        expires_at = _as_utc_aware(expires_at)
         delta = expires_at - now
         days_left = delta.days
         if days_left <= 3:
@@ -1262,6 +1305,78 @@ def v3_meals_log():
 
     meal_doc = _save_meal_log(user_id, payload)
     return jsonify({"success": True, "meal": meal_doc})
+
+
+@v3_bp.route("/api/v3/meals/<meal_id>", methods=["PATCH", "DELETE"])
+def v3_meals_patch_or_delete(meal_id):
+    user_id, err = _auth_guard()
+    if err:
+        return err
+    try:
+        oid = ObjectId(meal_id)
+    except Exception:
+        return jsonify({"success": False, "error": "invalid_meal_id"}), 400
+
+    doc = db.meal_logs.find_one({"_id": oid, "user_id": user_id})
+    if not doc:
+        return jsonify({"success": False, "error": "meal_not_found"}), 404
+
+    if request.method == "DELETE":
+        db.meal_logs.delete_one({"_id": oid, "user_id": user_id})
+        return jsonify({"success": True})
+
+    body = request.get_json(silent=True) or {}
+    text_input = str(body.get("text_input") or "").strip()
+    if not text_input:
+        return jsonify({"success": False, "error": "text_input_required"}), 400
+
+    meal_type = str(body.get("meal_type") or doc.get("meal_type") or "unspecified").strip() or "unspecified"
+    user_context = _get_user_context(user_id)
+    structured = _ai_structured_from_text(text_input, user_context)
+    if not structured:
+        return jsonify(
+            {"success": False, "error": "ai_generation_failed", "message": "Gemini could not parse meal text."}
+        ), 502
+
+    try:
+        macro_score = compute_macro_adherence_10pt(
+            _safe_float(structured.get("calories_kcal")),
+            _safe_float(structured.get("protein_g")),
+            _safe_float(structured.get("carbs_g")),
+            _safe_float(structured.get("fat_g")),
+            user_context.get("diet_type") or "standard_american",
+        )
+    except Exception:
+        macro_score = {"score": None, "explanation": "computation_error"}
+
+    now = datetime.now(timezone.utc)
+    logged_at = doc.get("logged_at") or now
+
+    update_doc = {
+        "source": "text",
+        "meal_type": meal_type,
+        "diet_type": user_context.get("diet_type") or doc.get("diet_type") or "standard_american",
+        "meal_name": structured.get("meal_name") or text_input[:80],
+        "notes": str(structured.get("notes") or doc.get("notes") or ""),
+        "macros": {
+            "calories_kcal": _safe_float(structured.get("calories_kcal")),
+            "protein_g": _safe_float(structured.get("protein_g")),
+            "carbs_g": _safe_float(structured.get("carbs_g")),
+            "fat_g": _safe_float(structured.get("fat_g")),
+            "fiber_g": _safe_float(structured.get("fiber_g")),
+            "sodium_mg": _safe_float(structured.get("sodium_mg")),
+        },
+        "raw_input": text_input,
+        "metadata": {"structured": structured},
+        "barcode": None,
+        "image_base64": None,
+        "personalization": {"macro_adherence": macro_score},
+        "updated_at": now,
+        "logged_at": logged_at,
+    }
+    db.meal_logs.update_one({"_id": oid, "user_id": user_id}, {"$set": update_doc})
+    updated = db.meal_logs.find_one({"_id": oid})
+    return jsonify({"success": True, "meal": _serialize_oid(updated)})
 
 
 @v3_bp.route("/api/v3/meals")
@@ -1694,15 +1809,21 @@ def v3_planner_week():
     if err:
         return err
 
-    week_start_raw = request.args.get("week_start")
-    if week_start_raw:
+    def _parse_week_start(raw):
+        if not raw:
+            return None
         try:
-            week_start = datetime.fromisoformat(str(week_start_raw).replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            return datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc)
         except Exception:
-            week_start = _week_start(datetime.now(timezone.utc))
-    else:
-        week_start = _week_start(datetime.now(timezone.utc))
+            return None
 
+    week_start_raw = request.args.get("week_start")
+    if request.method == "POST":
+        body_preview = request.get_json(silent=True) or {}
+        week_start_raw = week_start_raw or body_preview.get("week_start")
+
+    week_start = _parse_week_start(week_start_raw) or _week_start(datetime.now(timezone.utc))
     week_start = datetime(week_start.year, week_start.month, week_start.day, tzinfo=timezone.utc)
 
     if request.method == "GET":
@@ -2478,6 +2599,24 @@ def v3_social_join_challenge(challenge_id):
         {"$setOnInsert": {"joined_at": now, "score": 0, "schema_version": 3}},
         upsert=True,
     )
+    return jsonify({"success": True})
+
+
+@v3_bp.route("/api/v3/social/challenges/<challenge_id>/leave", methods=["POST"])
+def v3_social_leave_challenge(challenge_id):
+    user_id, err = _auth_guard()
+    if err:
+        return err
+    try:
+        cid = ObjectId(challenge_id)
+    except Exception:
+        return jsonify({"success": False, "error": "invalid_challenge_id"}), 400
+
+    challenge = db.challenges.find_one({"_id": cid, "is_active": True})
+    if not challenge:
+        return jsonify({"success": False, "error": "challenge_not_found"}), 404
+
+    db.challenge_members.delete_one({"challenge_id": cid, "user_id": user_id})
     return jsonify({"success": True})
 
 

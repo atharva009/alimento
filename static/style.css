@@ -168,6 +168,28 @@ select.input-glass {
     background: rgba(15, 23, 42, 0.85);
 }
 
+/* Async CTA loading (see static/cta-loading.js) */
+@keyframes cta-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.cta-spinner {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 9999px;
+    border: 2px solid currentColor;
+    border-bottom-color: transparent;
+    opacity: 0.9;
+    animation: cta-spin 0.65s linear infinite;
+    flex-shrink: 0;
+}
+
+button[aria-busy="true"] {
+    cursor: wait;
+}
+
 .btn-mini {
     padding: 0.325rem 0.75rem;
     border-radius: 0.5rem;

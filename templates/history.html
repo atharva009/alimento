@@ -7,10 +7,10 @@
         <div>
             <h1 class="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100 font-serif-accent">Analysis
                 History</h1>
-            <p class="text-gray-600 dark:text-gray-400 mt-1">Your personal nutrition timeline.</p>
+            <p class="text-gray-600 dark:text-gray-400 mt-1">Photo analyses and dashboard meals, grouped by the day they were logged.</p>
         </div>
         <div class="flex items-center space-x-3">
-            <button onclick="loadHistory()"
+            <button type="button" id="historyRefreshBtn"
                 class="glass-panel px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-white/80 dark:hover:bg-gray-800/80 transition-colors flex items-center space-x-2">
                 <i class="ph ph-arrow-clockwise"></i>
                 <span>Refresh</span>
@@ -31,7 +31,7 @@
     </div>
 
     <!-- History List -->
-    <div id="historyContainer" class="grid grid-cols-1 gap-6">
+    <div id="historyContainer" class="flex flex-col gap-8">
         <!-- Populated by JS -->
     </div>
 
@@ -40,12 +40,12 @@
         <div class="mb-6 flex justify-center">
             <i class="ph ph-bowl-food text-6xl text-gray-300 dark:text-gray-600"></i>
         </div>
-        <h3 class="text-xl font-bold mb-2 text-gray-900 dark:text-white font-serif-accent">No Meals Yet</h3>
+        <h3 class="text-xl font-bold mb-2 text-gray-900 dark:text-white font-serif-accent">No history yet</h3>
         <p class="text-gray-500 dark:text-gray-400 mb-8 max-w-sm mx-auto">
-            Upload your first meal photo to get detailed nutrition insights and diet scoring.
+            Log meals from the Dashboard or analyze a meal photo from Home. Everything you save shows up here by date.
         </p>
-        <a href="/" class="btn-primary px-8 py-3 rounded-xl font-medium inline-flex items-center space-x-2">
-            <span>Analyze Your First Meal</span>
+        <a href="/dashboard" class="btn-primary px-8 py-3 rounded-xl font-medium inline-flex items-center space-x-2">
+            <span>Go to Dashboard</span>
         </a>
     </div>
 
@@ -155,10 +155,9 @@
             </p>
 
             <div class="flex flex-col gap-3">
-                <button id="confirmDeleteBtn" onclick="executeDelete()"
+                <button type="button" id="confirmDeleteBtn" onclick="executeDelete()"
                     class="w-full py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold shadow-lg shadow-red-500/30 transition-all flex items-center justify-center gap-2">
                     <span id="deleteBtnText">Yes, Delete</span>
-                    <i class="ph ph-spinner animate-spin hidden" id="deleteSpinner"></i>
                 </button>
                 <button onclick="closeDeleteModal()"
                     class="w-full py-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold transition-all">
@@ -174,7 +173,13 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-    document.addEventListener('DOMContentLoaded', loadHistory);
+    document.addEventListener('DOMContentLoaded', () => {
+        loadHistory();
+        const historyRefreshBtn = document.getElementById('historyRefreshBtn');
+        if (historyRefreshBtn) {
+            historyRefreshBtn.addEventListener('click', () => withCtaLoading(historyRefreshBtn, loadHistory, { label: 'Refreshing…' }));
+        }
+    });
 
     async function loadHistory() {
         const list = document.getElementById('historyContainer');
@@ -203,93 +208,108 @@
         }
     }
 
-    function renderList(history) {
-        const list = document.getElementById('historyContainer');
-        list.innerHTML = history.map(item => {
-            // Prepare Image Source (Base64 or Path)
-            let imgSrc = '';
-            if (item.image_base64) {
-                imgSrc = `data:image/jpeg;base64,${item.image_base64}`;
-            } else if (item.image_path) {
-                // Fallback for old items or if base64 missing
-                // Convert local /tmp path to served static path if possible, or just ignore if local
-                // Since /tmp isn't served statically usually, this is why we added Base64.
-                // For demo purposes, we'll try to use the path if it looks like a relative static path, otherwise placeholder
-                if (item.image_path.startsWith('static/') || item.image_path.startsWith('/static/')) {
-                    imgSrc = item.image_path;
-                } else {
-                    // Assuming older items might be broken images if ephemeral
-                    imgSrc = 'https://placehold.co/400x300?text=Image+Exp';
-                }
+    function historyDayKey(ts) {
+        const d = new Date(ts);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function historyDayTitle(ts) {
+        return new Date(ts).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    function renderHistoryCard(item) {
+        let imgSrc = '';
+        if (item.image_base64) {
+            imgSrc = `data:image/jpeg;base64,${item.image_base64}`;
+        } else if (item.image_path) {
+            if (item.image_path.startsWith('static/') || item.image_path.startsWith('/static/')) {
+                imgSrc = item.image_path;
             } else {
-                imgSrc = 'https://placehold.co/400x300?text=No+Image';
+                imgSrc = 'https://placehold.co/400x400?text=Image';
             }
+        } else {
+            imgSrc = item.history_kind === 'v3'
+                ? 'https://placehold.co/400x400/e8e4f0/5b21b6?text=Meal'
+                : 'https://placehold.co/400x400?text=No+image';
+        }
 
-            const date = new Date(item.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-            const time = new Date(item.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-            const summary = item.analysis ? item.analysis.substring(0, 180).replace(/[#*`]/g, '') + '...' : 'No analysis content.';
-            const goal = item.dietary_goal.replace(/_/g, ' ').toUpperCase();
+        const time = new Date(item.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const goal = (item.dietary_goal || 'general').replace(/_/g, ' ').toUpperCase();
+        const kind = item.history_kind || 'legacy';
+        const cal = item.analysis_json?.nutritional_estimation?.calories ?? item.analysis_json?.calories_kcal;
+        const mealTitle = (typeof item.analysis_json?.meal_identification === 'string'
+            ? item.analysis_json.meal_identification
+            : item.analysis_json?.meal_identification?.name)
+            || 'Meal';
+        const safeId = String(item._id || '').replace(/[^a-f0-9]/gi, '');
 
-            return `
-        <div class="glass-panel rounded-2xl p-1 overflow-visible hover:shadow-lg transition-all group relative">
-             <!-- Delete Button - Absolute Top Right -->
+        return `
+        <div class="group relative aspect-square rounded-2xl overflow-hidden border border-white/50 dark:border-gray-700/80 shadow-sm hover:shadow-lg transition-all cursor-pointer bg-gray-900"
+             role="button" tabindex="0" data-history-id="${safeId}"
+             onclick="openModalFromHistory(this.dataset.historyId)"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openModalFromHistory(this.dataset.historyId);}">
              {% if not is_guest %}
-             <button onclick='openDeleteModal("single", "${item._id}"); event.stopPropagation();' class="absolute top-2 right-2 z-20 w-8 h-8 rounded-full bg-white/80 dark:bg-black/50 hover:bg-red-50 dark:hover:bg-red-900/50 text-gray-400 hover:text-red-500 backdrop-blur-sm flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 shadow-sm border border-gray-100 dark:border-gray-700">
-                <i class="ph ph-trash text-lg"></i>
+             <button type="button" onclick='openDeleteModal("single", "${item._id}", "${kind}"); event.stopPropagation();'
+                class="absolute top-2 right-2 z-20 w-8 h-8 rounded-full bg-black/45 hover:bg-red-600/90 text-white backdrop-blur-sm flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 pointer-events-auto shadow-md"
+                title="Delete" aria-label="Delete meal">
+                <i class="ph ph-trash text-base"></i>
              </button>
              {% endif %}
-
-            <div class="bg-white/50 dark:bg-gray-900/40 rounded-[0.9rem] p-5 flex flex-col md:flex-row gap-6 h-full">
-                <!-- Image Thumbnail -->
-                <div class="w-full md:w-56 h-48 md:h-auto flex-shrink-0 rounded-xl overflow-hidden bg-gray-100 dark:bg-black/20 border border-gray-100 dark:border-gray-800 relative cursor-pointer group/img" onclick='openModal(${JSON.stringify(item).replace(/'/g, "&#39;")})'>
-                    <img src="${imgSrc}" class="w-full h-full object-cover transition-transform duration-500 group-hover/img:scale-105" loading="lazy">
-                    <div class="absolute inset-0 bg-black/0 group-hover/img:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover/img:opacity-100">
-                         <i class="ph ph-arrows-out-simple text-white text-2xl drop-shadow-md"></i>
-                    </div>
-                    <!-- Date Badge Overlay -->
-                    <div class="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-white text-[10px] uppercase font-bold px-2 py-1 rounded-lg">
-                        ${date}
-                    </div>
+            <img src="${imgSrc}" alt="" class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy">
+            <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none"></div>
+            <div class="absolute top-2 left-2 z-10 flex flex-wrap gap-1 pointer-events-none max-w-[calc(100%-3rem)]">
+                <span class="px-1.5 py-0.5 rounded-md bg-white/25 backdrop-blur-md text-white text-[9px] font-bold uppercase tracking-wide border border-white/20">${goal}</span>
+                ${kind === 'v3' ? '<span class="px-1.5 py-0.5 rounded-md bg-white/15 text-white/95 text-[9px] font-bold uppercase tracking-wide">Log</span>' : ''}
+            </div>
+            <div class="absolute bottom-0 left-0 right-0 p-3 pt-8 text-white pointer-events-none">
+                <h3 class="font-bold text-sm sm:text-base leading-snug line-clamp-2 font-serif-accent drop-shadow-md">${mealTitle}</h3>
+                <div class="flex items-center justify-between mt-2 text-[11px] font-medium text-white/90 drop-shadow">
+                    <span><i class="ph ph-clock mr-0.5"></i>${time}</span>
+                    ${cal != null && cal !== '' ? `<span><i class="ph ph-fire mr-0.5 text-amber-300"></i>${cal} kcal</span>` : '<span></span>'}
                 </div>
-
-                <!-- Content -->
-                <div class="flex-1 flex flex-col pt-1">
-                    <div class="flex items-start justify-between mb-3">
-                        <div class="space-y-1">
-                             <div class="flex items-center gap-2">
-                                <span class="px-2 py-0.5 rounded-md bg-purple-100/50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 text-[10px] font-bold uppercase tracking-wider border border-purple-200/50 dark:border-purple-800/30">${goal}</span>
-                             </div>
-                             <h3 class="text-xl font-bold text-gray-900 dark:text-gray-50 font-serif-accent cursor-pointer hover:text-purple-600 transition-colors leading-tight" onclick='openModal(${JSON.stringify(item).replace(/'/g, "&#39;")})'>
-                                ${(typeof item.analysis_json?.meal_identification === 'string'
-                    ? item.analysis_json.meal_identification
-                    : item.analysis_json?.meal_identification?.name)
-                || 'Meal Analysis'
-                }
-                             </h3>
-                        </div>
-                    </div>
-                    
-                    <p class="text-sm text-gray-600 dark:text-gray-400 line-clamp-3 mb-4 leading-relaxed opacity-90">
-                        ${summary}
-                    </p>
-                    
-                    <div class="mt-auto flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-800">
-                         <div class="flex items-center gap-4 text-xs text-gray-500">
-                            <span><i class="ph ph-clock mr-1"></i> ${time}</span>
-                            ${item.analysis_json?.nutritional_estimation?.calories ? `
-                                <span class="hidden sm:inline-flex items-center"><i class="ph ph-fire mr-1 text-orange-500"></i> ${item.analysis_json.nutritional_estimation.calories} cal</span>
-                            ` : ''}
-                         </div>
-                         <button onclick='openModal(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="text-sm font-semibold text-gray-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-400 transition-colors flex items-center gap-1.5 group/btn">
-                             View Full Report <i class="ph ph-arrow-right group-hover/btn:translate-x-0.5 transition-transform"></i>
-                         </button>
-                    </div>
-                </div>
+                <p class="mt-1.5 text-[10px] text-white/80 line-clamp-1 opacity-0 group-hover:opacity-100 transition-opacity">Tap for details</p>
             </div>
         </div>
         `;
-        }).join('');
     }
+
+    function renderList(history) {
+        const list = document.getElementById('historyContainer');
+        const sorted = [...history].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        window.__historyIndex = {};
+        sorted.forEach((it) => {
+            if (it && it._id) window.__historyIndex[String(it._id)] = it;
+        });
+
+        let lastDay = '';
+        let inGrid = false;
+        const parts = [];
+        for (const item of sorted) {
+            const dk = historyDayKey(item.timestamp);
+            if (dk !== lastDay) {
+                if (inGrid) {
+                    parts.push('</div></section>');
+                    inGrid = false;
+                }
+                lastDay = dk;
+                parts.push(`<section class="space-y-3"><h2 class="text-lg font-bold font-serif-accent text-gray-900 dark:text-white pb-2 border-b border-gray-200 dark:border-gray-700">${historyDayTitle(item.timestamp)}</h2>`);
+                parts.push('<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">');
+                inGrid = true;
+            }
+            parts.push(renderHistoryCard(item));
+        }
+        if (inGrid) {
+            parts.push('</div></section>');
+        }
+        list.innerHTML = parts.join('');
+    }
+
+    window.openModalFromHistory = function (id) {
+        const item = (window.__historyIndex || {})[String(id || '')];
+        if (item && typeof window.openModal === 'function') {
+            window.openModal(item);
+        }
+    };
 
     // Modal Logic
     const modal = document.getElementById('analysisModal');
@@ -323,10 +343,17 @@
         const goal = (item.dietary_goal || 'General').replace(/_/g, ' ');
         modalDietBadge.textContent = goal;
 
+        const shareBtn = document.getElementById('modalShareBtn');
+        if (shareBtn) {
+            shareBtn.style.display = item.history_kind === 'v3' ? 'none' : '';
+        }
+
         // Markdown
         // Strip the DATA_PAYLOAD block if present in the raw text to avoid showing JSON code
         const rawMd = (item.analysis || '').replace(/```\s*DATA_PAYLOAD[\s\S]*?```/g, '');
-        modalContent.innerHTML = marked.parse(rawMd);
+        modalContent.innerHTML = rawMd.trim()
+            ? marked.parse(rawMd)
+            : '<p class="text-gray-500 text-sm">No long-form write-up for this entry (dashboard meal log).</p>';
 
         // Image
         let imgSrc = 'https://placehold.co/400x300?text=No+Image';
@@ -348,6 +375,8 @@
         modal.classList.add('hidden');
         document.body.style.overflow = '';
         currentAnalysisId = null;
+        const shareBtn = document.getElementById('modalShareBtn');
+        if (shareBtn) shareBtn.style.display = '';
     }
 
     window.shareAnalysis = async function (id) {
@@ -375,11 +404,13 @@
     // --- Delete Modal Logic ---
     let pendingDeleteType = null;
     let pendingDeleteId = null;
+    let pendingDeleteKind = 'legacy';
 
     // Use these instead of direct calls
-    window.openDeleteModal = function (type, id = null) {
+    window.openDeleteModal = function (type, id = null, kind = null) {
         pendingDeleteType = type;
         pendingDeleteId = id;
+        pendingDeleteKind = kind || 'legacy';
 
         const dModal = document.getElementById('deleteModal');
         const title = document.getElementById('deleteModalTitle');
@@ -390,11 +421,11 @@
 
         if (type === 'all') {
             title.textContent = 'Clear History?';
-            text.textContent = 'Are you sure you want to delete ALL meal history? This cannot be undone.';
+            text.textContent = 'This removes every saved photo analysis and every dashboard meal log. This cannot be undone.';
             btnText.textContent = 'Yes, Clear All';
         } else {
-            title.textContent = 'Delete Analysis?';
-            text.textContent = 'Are you sure you want to delete this meal analysis?';
+            title.textContent = 'Delete this entry?';
+            text.textContent = 'This meal will be removed from your history.';
             btnText.textContent = 'Yes, Delete';
         }
     }
@@ -403,55 +434,49 @@
         document.getElementById('deleteModal').classList.add('hidden');
         pendingDeleteType = null;
         pendingDeleteId = null;
+        pendingDeleteKind = 'legacy';
 
-        // Reset button state
         const btn = document.getElementById('confirmDeleteBtn');
-        const txt = document.getElementById('deleteBtnText');
-        const spin = document.getElementById('deleteSpinner');
-        btn.disabled = false;
-        btn.classList.remove('opacity-75', 'cursor-not-allowed');
-        spin.classList.add('hidden');
+        if (btn && typeof setCtaLoading === 'function') setCtaLoading(btn, false);
     }
 
     window.executeDelete = async function () {
         const btn = document.getElementById('confirmDeleteBtn');
-        const txt = document.getElementById('deleteBtnText');
-        const spin = document.getElementById('deleteSpinner');
 
-        btn.disabled = true;
-        btn.classList.add('opacity-75', 'cursor-not-allowed');
-        txt.textContent = 'Deleting...';
-        spin.classList.remove('hidden');
-
-        try {
-            if (pendingDeleteType === 'single' && pendingDeleteId) {
-                // Delete Single
-                const res = await fetch(`/delete-analysis/${pendingDeleteId}`, { method: 'POST' });
-                const data = await res.json();
-                if (data.success) {
-                    closeDeleteModal();
-                    loadHistory();
-                } else {
-                    alert(data.error || "Failed to delete");
-                    closeDeleteModal();
+        await withCtaLoading(btn, async () => {
+            try {
+                if (pendingDeleteType === 'single' && pendingDeleteId) {
+                    let res;
+                    if (pendingDeleteKind === 'v3') {
+                        res = await fetch(`/api/v3/meals/${encodeURIComponent(pendingDeleteId)}`, { method: 'DELETE' });
+                    } else {
+                        res = await fetch(`/delete-analysis/${encodeURIComponent(pendingDeleteId)}`, { method: 'POST' });
+                    }
+                    const data = await res.json().catch(() => ({}));
+                    if (data.success) {
+                        closeDeleteModal();
+                        loadHistory();
+                    } else {
+                        alert(data.error || "Failed to delete");
+                        closeDeleteModal();
+                    }
+                } else if (pendingDeleteType === 'all') {
+                    const res = await fetch('/api/history/clear', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.success) {
+                        closeDeleteModal();
+                        loadHistory();
+                    } else {
+                        alert(data.error || "Failed to clear history");
+                        closeDeleteModal();
+                    }
                 }
-            } else if (pendingDeleteType === 'all') {
-                // Delete All
-                const res = await fetch('/api/history/clear', { method: 'POST' });
-                const data = await res.json();
-                if (data.success) {
-                    closeDeleteModal();
-                    loadHistory();
-                } else {
-                    alert(data.error || "Failed to clear history");
-                    closeDeleteModal();
-                }
+            } catch (e) {
+                console.error(e);
+                alert("An error occurred.");
+                closeDeleteModal();
             }
-        } catch (e) {
-            console.error(e);
-            alert("An error occurred.");
-            closeDeleteModal();
-        }
+        }, { label: 'Deleting…' });
     }
 
     // Hook up the Clear All button in logic if needed, but in HTML calling clearHistory() 

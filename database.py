@@ -1,5 +1,6 @@
 # database.py - MongoDB Atlas Database Manager - VERCEL FIXED VERSION
 import os
+import certifi
 from pymongo import MongoClient
 from datetime import datetime
 import json
@@ -53,9 +54,12 @@ class MongoDBManager:
             print(f"Connecting to: ...@{uri_parts[1][:50]}...")
         
         try:
-            # Create MongoDB client with explicit timeout settings
+            # Use certifi CA bundle so TLS to Atlas works on macOS/Python builds
+            # that lack a full system certificate store (avoids SSL verify failures
+            # during auth and other first DB operations).
             self.client = MongoClient(
                 self.connection_string,
+                tlsCAFile=certifi.where(),
                 serverSelectionTimeoutMS=10000,  # 10 seconds timeout
                 connectTimeoutMS=10000,
                 socketTimeoutMS=10000,
